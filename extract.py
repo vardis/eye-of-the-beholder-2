@@ -10,12 +10,16 @@ from enum import Enum, IntFlag
 from location import Location
 from binary_reader import BinaryReader
 from compression import decode_format80
+import gfx
+from assets import AssetsManager
 
 # TODO: Not sure about this one...
 directions = ['north', 'east', 'south', 'west']
 
 DATA_DIR = "data/"
 BUILD_DIR = "build/"
+
+assets_manager = AssetsManager()
 
 classes = {
     0x00: "Fighter",
@@ -530,7 +534,6 @@ class Alignment(Enum):
     ChaoticEvil = 8,
 
 
-import gfx
 
 
 class DoorInfo:
@@ -551,8 +554,7 @@ class DoorInfo:
 
     def decode(self, palette_name):
         if self.gfxFile is not None:
-            img = gfx.load_cps(DATA_DIR + self.gfxFile, DATA_DIR + palette_name)
-            img.save(BUILD_DIR + "%s.png" % self.gfxFile)
+            assets_manager.export_cps_image(self.gfxFile, palette_name)
 
         return {
             "command": self.command,
@@ -990,10 +992,7 @@ class Inf:
 
                         b = reader.read_ubyte()
                         if b in (0xEC, 0xEA):
-                            # append .CPS if it doesn't have
-                            door.gfxFile = reader.read_string(13).upper()
-                            if not door.gfxFile.endswith('.CPS'):
-                                door.gfxFile += '.CPS'
+                            door.gfxFile = reader.read_string(13)
 
                             door.idx = reader.read_ubyte()
                             door.type = reader.read_ubyte()
