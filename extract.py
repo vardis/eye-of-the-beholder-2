@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.6
+#!/usr/bin/env python3
 
 import os
 import struct
@@ -8,9 +8,14 @@ from PIL import Image, ImageDraw
 import tokens
 from enum import Enum, IntFlag
 from location import Location
+from binary_reader import BinaryReader
+from compression import decode_format80
 
 # TODO: Not sure about this one...
 directions = ['north', 'east', 'south', 'west']
+
+DATA_DIR = "data/"
+BUILD_DIR = "build/"
 
 classes = {
     0x00: "Fighter",
@@ -87,8 +92,8 @@ class ItemFlags(IntFlag):
     Nothing = 0x00,
     Flag01 = 0x01
     ArmorBonus = 0x02
-    Flag04 = 0x04           # Enchanted ??
-    isVampiric = 0x08       # Sucks damage points from target to attacker
+    Flag04 = 0x04  # Enchanted ??
+    isVampiric = 0x08  # Sucks damage points from target to attacker
     SpeedBonus = 0x10
     isCursed = 0x20
     isIdentified = 0x40
@@ -99,12 +104,12 @@ class ProfessionFlags(IntFlag):
     """
 
     """
-    Fighter = 0x01    #
-    Ranger = 0x02    #
-    Paladin = 0x04    #
-    Mage = 0x08    #
-    Cleric = 0x10    #
-    Thief = 0x20    #
+    Fighter = 0x01  #
+    Ranger = 0x02  #
+    Paladin = 0x04  #
+    Mage = 0x08  #
+    Cleric = 0x10  #
+    Thief = 0x20  #
 
 
 class ItemSlotFlags(IntFlag):
@@ -151,222 +156,6 @@ ItemAction = {
     '144': "Crimson ring",
     '146': "Wand",
 }
-
-
-class BinaryReader:
-    """
-
-    """
-    def __init__(self, filename):
-
-        self.filename = filename
-        self.handle = None
-
-    def __enter__(self):
-        """
-
-        :return:
-        """
-        self.handle = open(self.filename, 'rb')
-
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-
-        :param exc_type:
-        :param exc_val:
-        :param exc_tb:
-        :return:
-        """
-        if self.handle:
-            self.handle.close()
-            self.handle = None
-
-    @property
-    def offset(self):
-        """
-
-        :return:
-        """
-        if not self.handle:
-            return None
-
-        return self.handle.tell()
-
-    @property
-    def offset_hex(self):
-        """
-
-        :return:
-        """
-        return hex(self.offset)
-
-    def read_ubyte(self, count=1):
-        """
-
-        :param count:
-        :return:
-        """
-        val = struct.unpack('{count}B'.format(count=count), self.handle.read(count))
-
-        if count == 1:
-            return val[0]
-        return val
-
-    def read_byte(self, count=1):
-        """
-
-        :param count:
-        :return:
-        """
-        val = struct.unpack('{count}b'.format(count=count), self.handle.read(count))
-        if count == 1:
-            return val[0]
-        return val
-
-    def peek_ubyte(self, count=1):
-        """
-
-        :param count:
-        :return:
-        """
-        s = struct.unpack('{count}B'.format(count=count), self.handle.read(count))
-        self.handle.seek(-count, 1)
-        if count == 1:
-            return s[0]
-
-        return list(s[:count])
-
-    def peek_byte(self, count=1):
-        """
-
-        :param count:
-        :return:
-        """
-        value = struct.unpack('{count}b'.format(count=count), self.handle.read(count))[0]
-        self.handle.seek(-count, 1)
-        return value
-
-    def read_ushort(self, count=1):
-        """
-
-        :param count:
-        :return:
-        """
-        val = struct.unpack('{count}H'.format(count=count), self.handle.read(count*2))
-        if count == 1:
-            return val[0]
-        return val
-
-    def read_short(self, count=1):
-        """
-
-        :param count:
-        :return:
-        """
-        val = struct.unpack('{count}h'.format(count=count), self.handle.read(count*2))
-        if count == 1:
-            return val[0]
-        return val
-
-    def peek_ushort(self, count=1):
-        """
-
-        :param count:
-        :return:
-        """
-        value = struct.unpack('{count}H'.format(count=count), self.handle.read(count*2))[0]
-        self.handle.seek(-count * 2, 1)
-        return value
-
-    def peek_short(self, count=1):
-        """
-
-        :param count:
-        :return:
-        """
-        value = struct.unpack('{count}h'.format(count=count), self.handle.read(count*2))[0]
-        self.handle.seek(-count * 2, 1)
-        return value
-
-    def read_uint(self, count=1):
-        """
-
-        :param count:
-        :return:
-        """
-        val = struct.unpack('{count}I'.format(count=count), self.handle.read(count*4))
-        if count == 1:
-            return val[0]
-        return val
-
-    def read_int(self, count=1):
-        """
-
-        :param count:
-        :return:
-        """
-        val = struct.unpack('{count}i'.format(count=count), self.handle.read(count*4))[0]
-        if count == 1:
-            return val[0]
-        return val
-
-    def read_string(self, length=0):
-        """
-
-        :param length:
-        :return:
-        """
-
-        buff = struct.unpack('{length}s'.format(length=length), self.handle.read(length))[0]
-
-        string = ''
-        for c in buff:
-            if c == 0:
-                break
-            string += chr(c)
-
-        return string
-
-    def peek_string(self, length=0):
-        str = self.read_string(length)
-        self.rewind(length)
-        return str
-
-    def search_string(self):
-        """
-
-        :return:
-        """
-
-        string = ''
-
-        while True:
-            b = self.read_ubyte()
-
-            if b == 0x0:
-                return string
-
-            string += chr(b)
-
-    def rewind(self, offset):
-        """
-        Move offset backward
-        :param offset:
-        :return:
-        """
-
-        self.handle.seek(-offset, 1)
-
-    def seek(self, offset):
-        """
-        Set offset
-        :param offset:
-        :return:
-        """
-
-        self.handle.seek(offset)
 
 
 class Monster:
@@ -432,7 +221,7 @@ class Monster:
         if not reader:
             return
 
-        self.index = reader.read_ubyte()
+        self.index = reader.read_byte()
         self.timer_id = reader.read_ubyte()
         self.location = Location(reader)
         self.sub_position = reader.read_ubyte()
@@ -441,8 +230,8 @@ class Monster:
         self.picture_index = reader.read_ubyte()
         self.phase = reader.read_ubyte()
         self.pause = reader.read_ubyte()
-        self.pocket_item = reader.read_ushort()
         self.weapon = reader.read_ushort()
+        self.pocket_item = reader.read_ushort()
 
     def __str__(self):
         """
@@ -452,7 +241,8 @@ class Monster:
 
         return "ID {index} @ {location}|{subposition} [direction: {direction}, Timer:{timer}, type:{type}, " \
                "picture:{picture}, phase:{phase}, pause:{pause}, weapon:{weapon}, pocket:{pocket}]".format(
-            index=self.index, location=self.location, subposition=self.sub_position, direction=directions[self.direction],
+            index=self.index, location=self.location, subposition=self.sub_position,
+            direction=directions[self.direction],
             timer=self.timer_id, type=self.type, picture=self.picture_index, phase=self.phase, pause=self.pause,
             weapon=self.weapon, pocket=self.pocket_item
         )
@@ -462,6 +252,7 @@ class Dice:
     """
 
     """
+
     def __init__(self, reader=None):
         self.rolls = 0
         self.sides = 0
@@ -490,7 +281,6 @@ class Dice:
         }
 
     def __str__(self):
-
         return "({rolls}d{sides})+{base}".format(rolls=self.rolls, sides=self.sides, base=self.base)
 
 
@@ -567,12 +357,12 @@ class WallMapping:
     """
 
     def __init__(self):
-        self.index = 0              # This is the index used by the .maz file
-        self.type = 0               # Index to what backdrop wall type that is being used
-        self.decorationId = 0       # Index to an optional overlay decoration image in the DecorationData.decorations
+        self.index = 0  # This is the index used by the .maz file
+        self.type = 0  # Index to what backdrop wall type that is being used
+        self.decorationId = 0  # Index to an optional overlay decoration image in the DecorationData.decorations
         # array in the [[eob.dat |.dat]] files
-        self.eventMask = 0          #
-        self.flags = 0              #
+        self.eventMask = 0  #
+        self.flags = 0  #
 
     @property
     def is_blocking(self):
@@ -586,13 +376,13 @@ class WallMapping:
 
     def __str__(self):
 
-        type = ""
-        if self.type & 0x01 == 0x01: type += "WT_SOLID, "
-        if self.type & 0x02 == 0x02: type += "WT_SELFDRAW, "
-        if self.type & 0x04 == 0x04: type += "WT_DOORSTUCK, "
-        if self.type & 0x08 == 0x08: type += "WT_DOORMOVES, "
-        if self.type & 0x10 == 0x10: type += "WT_DOOROPEN, "
-        if self.type & 0x20 == 0x20: type += "WT_DOORCLOSED, "
+        wall_type = ""
+        if self.type & 0x01 == 0x01: wall_type += "WT_SOLID, "
+        if self.type & 0x02 == 0x02: wall_type += "WT_SELFDRAW, "
+        if self.type & 0x04 == 0x04: wall_type += "WT_DOORSTUCK, "
+        if self.type & 0x08 == 0x08: wall_type += "WT_DOORMOVES, "
+        if self.type & 0x10 == 0x10: wall_type += "WT_DOOROPEN, "
+        if self.type & 0x20 == 0x20: wall_type += "WT_DOORCLOSED, "
 
         flags = ""
         if self.flags & 0x00 == 0x00: flags += "WF_PASSNONE, "
@@ -606,7 +396,7 @@ class WallMapping:
         if self.flags & 0x40 == 0x40: flags += "WF_DOORKNOB, "
         if self.flags & 0x80 == 0x80: flags += "WF_ONLYDEC, "
 
-        return "Type: {type} - Flags: {flags}".format(type=type, flags=flags)
+        return "Type: {type} - Flags: {flags}".format(type=wall_type, flags=flags)
 
 
 class DecorationInfo:
@@ -740,22 +530,30 @@ class Alignment(Enum):
     ChaoticEvil = 8,
 
 
+import gfx
+
+
 class DoorInfo:
     """
     http://eab.abime.net/showpost.php?p=533880&postcount=374
     http://eab.abime.net/showpost.php?p=579468&postcount=405
     """
+
     def __init__(self):
         self.command = None
         self.idx = None
         self.type = None
         self.knob = None
         self.gfxFile = ""
-        self.doorRectangles = [Rectangle() for i in range(3)]        # rectangles in door?.cps size [3]
-        self.buttonRectangles = [Rectangle() for i in range(2)]    # rectangles in door?.cps size [2]
-        self.buttonPositions = [Point() for i in range(2)]         # x y position where to place door button size [2,2]
+        self.doorRectangles = [Rectangle() for i in range(3)]  # rectangles in door?.cps size [3]
+        self.buttonRectangles = [Rectangle() for i in range(2)]  # rectangles in door?.cps size [2]
+        self.buttonPositions = [Point() for i in range(2)]  # x y position where to place door button size [2,2]
 
-    def decode(self):
+    def decode(self, palette_name):
+        if self.gfxFile is not None:
+            img = gfx.load_cps(DATA_DIR + self.gfxFile, DATA_DIR + palette_name)
+            img.save(BUILD_DIR + "%s.png" % self.gfxFile)
+
         return {
             "command": self.command,
             "idx": self.idx,
@@ -765,7 +563,7 @@ class DoorInfo:
             "doorRectangle": [rect.decode() for rect in self.doorRectangles],
             "buttons": {
                 "rectangles": [rect.decode() for rect in self.buttonRectangles],
-                "positions":  [point.decode() for point in self.buttonPositions],
+                "positions": [point.decode() for point in self.buttonPositions],
             }
         }
 
@@ -774,6 +572,7 @@ class MonsterType:
     """
 
     """
+
     def __init__(self):
         self.index = 0
         self.unk0 = None
@@ -815,8 +614,8 @@ class MonsterType:
             },
             "unknown2": self.unk2,
             "exp_gain": self.exp_gain,
-            "size": self.size ,
-            "move_sound": self.mouve_sound,
+            "size": self.size,
+            "move_sound": self.move_sound,
             "unknown3": self.unk3,
             "is_attack2": self.is_attack2,
             "max_attack_count": self.max_attack_count,
@@ -849,7 +648,6 @@ class MonsterGfx:
         }
 
     def __str__(self):
-
         return self.label
 
 
@@ -893,6 +691,7 @@ class Trigger:
                         // party leave
         
         """
+
     def decode(self, reader):
         """
 
@@ -926,6 +725,7 @@ class Header:
     """
 
     """
+
     def __init__(self):
         self.mazeName = None
         self.vmpVncName = None
@@ -933,7 +733,7 @@ class Header:
         self.soundName = None
         self.doors = [DoorInfo() for i in range(2)]
         self.monsterGfx = [MonsterGfx() for i in range(2)]
-        self.monsterTypes = [] # [MonsterType() for i in range(35)]
+        self.monsterTypes = []  # [MonsterType() for i in range(35)]
         self.decorations = []
         self.max_monsters = None
         self.next_hunk = None
@@ -944,10 +744,10 @@ class Header:
             "vmpVncName": self.vmpVncName,
             "palette": self.paletteName,
             "sound": self.soundName,
-            "doors": [door.decode() for door in self.doors],
+            "doors": [door.decode(self.paletteName) for door in self.doors],
             "monsters": {
                 "gfx": [gfx.decode() for gfx in self.monsterGfx],
-                "types": [type.decode() for type in self.monsterTypes],
+                "types": [monster_type.decode() for monster_type in self.monsterTypes],
             },
             "decorations": [None for deco in self.decorations],
             "max_monsters": self.max_monsters,
@@ -959,6 +759,7 @@ class Script:
     """
 
     """
+
     def __init__(self, reader=None):
         """
 
@@ -976,7 +777,9 @@ class Script:
             return
 
         start = reader.offset
-        length = reader.read_ushort()
+
+        rel_offset_to_strings = reader.read_ushort()
+        length = rel_offset_to_strings
 
         while reader.offset < start + length:
 
@@ -1061,6 +864,7 @@ class Inf:
     """
 
     """
+
     def __init__(self, name):
 
         self.name = name
@@ -1147,7 +951,18 @@ class Inf:
         #     0x41 - rune 'entrance'
         #     0x45 - cave-in or stone portal
 
+        inf_filename = filename + '.INF'
+        uncps_filename = filename + '.uncps'
+
         with BinaryReader(filename + '.INF') as reader:
+
+            data = decode_format80(reader)
+
+            with open(uncps_filename, "wb") as handle:
+                s = struct.pack('{count}B'.format(count=len(data)), *data)
+                handle.write(s)
+
+        with BinaryReader(uncps_filename) as reader:
 
             # hunk 1
             self.hunks[0] = reader.read_ushort()
@@ -1161,10 +976,12 @@ class Inf:
                     if b == 0xEC:
                         header.mazeName = reader.read_string(13)
                         header.vmpVncName = reader.read_string(13)
+                        header.paletteName = header.vmpVncName.upper() + '.PAL'
 
                     b = reader.read_ubyte()
                     if b != 0xFF:
                         header.paletteName = reader.read_string(13)
+                        print("setting palette to " + header.paletteName)
 
                     header.soundName = reader.read_string(13)
 
@@ -1173,7 +990,11 @@ class Inf:
 
                         b = reader.read_ubyte()
                         if b in (0xEC, 0xEA):
-                            door.gfxFile = reader.read_string(13)
+                            # append .CPS if it doesn't have
+                            door.gfxFile = reader.read_string(13).upper()
+                            if not door.gfxFile.endswith('.CPS'):
+                                door.gfxFile += '.CPS'
+
                             door.idx = reader.read_ubyte()
                             door.type = reader.read_ubyte()
                             door.knob = reader.read_ubyte()
@@ -1215,41 +1036,42 @@ class Inf:
                         if b == 0xFF:
                             break
 
-                        type = MonsterType()
-                        type.index = b
-                        type.unk0 = reader.read_ubyte()
-                        type.thac0 = reader.read_ubyte()
-                        type.unk1 = reader.read_ubyte()
+                        monster_type = MonsterType()
+                        monster_type.index = b
+                        monster_type.unk0 = reader.read_ubyte()
+                        monster_type.thac0 = reader.read_ubyte()
+                        monster_type.unk1 = reader.read_ubyte()
 
-                        type.hp_dice.process(reader)
+                        monster_type.hp_dice.process(reader)
 
-                        type.number_of_attacks = reader.read_ubyte()
-                        for dice in type.attack_dice:
+                        monster_type.number_of_attacks = reader.read_ubyte()
+                        for dice in monster_type.attack_dice:
                             dice.process(reader)
 
-                        type.special_attack_flag = reader.read_ushort()
-                        type.abilities_flags = reader.read_ushort()
-                        type.unk2 = reader.read_ushort()
-                        type.exp_gain = reader.read_ushort()
-                        type.size = reader.read_ubyte()
-                        type.attack_sound = reader.read_ubyte()
-                        type.move_sound = reader.read_ubyte()
-                        type.unk3 = reader.read_ubyte()
+                        monster_type.special_attack_flag = reader.read_ushort()
+                        monster_type.abilities_flags = reader.read_ushort()
+                        monster_type.unk2 = reader.read_ushort()
+                        monster_type.exp_gain = reader.read_ushort()
+                        monster_type.size = reader.read_ubyte()
+                        monster_type.attack_sound = reader.read_ubyte()
+                        monster_type.move_sound = reader.read_ubyte()
+                        monster_type.unk3 = reader.read_ubyte()
 
                         b = reader.read_ubyte()
                         if b != 0xFF:
-                            type.is_attack2 = True
-                            type.distant_attack = reader.read_ubyte()
-                            type.max_attack_count = reader.read_ubyte()
-                            for i in range(type.max_attack_count):
-                                type.attack_list[i] = reader.read_ubyte()
+                            monster_type.is_attack2 = True
+                            monster_type.distant_attack = reader.read_ubyte()
+                            monster_type.max_attack_count = reader.read_ubyte()
+                            print('max attack count', monster_type.max_attack_count)
+                            for i in range(monster_type.max_attack_count):
+                                monster_type.attack_list[i] = reader.read_ubyte()
                                 reader.read_ubyte()
 
-                        type.turn_undead_value = reader.read_byte()
-                        type.unk4 = reader.read_ubyte()
-                        type.unk5 = reader.read_ubyte(3)
+                        monster_type.turn_undead_value = reader.read_byte()
+                        monster_type.unk4 = reader.read_ubyte()
+                        monster_type.unk5 = reader.read_ubyte(3)
 
-                        header.monsterTypes.append(type)
+                        header.monsterTypes.append(monster_type)
 
                     # endregion
 
@@ -1294,17 +1116,7 @@ class Inf:
                 # Descriptions
                 for i in range(30):
                     monster = Monster()
-                    monster.index = reader.read_byte()
-                    monster.timer_id = reader.read_ubyte()
-                    monster.location = Location(reader)
-                    monster.sub_position = reader.read_ubyte()
-                    monster.direction = reader.read_ubyte()
-                    monster.type = reader.read_ubyte()
-                    monster.picture_index = reader.read_ubyte()
-                    monster.phase = reader.read_ubyte()
-                    monster.pause = reader.read_ubyte()
-                    monster.weapon = reader.read_ushort()
-                    monster.pocket_item = reader.read_ushort()
+                    monster.decode(reader)
 
                     self.monsters.append(monster)
 
@@ -1319,7 +1131,7 @@ class Inf:
 
             # endregion
 
-            # region Triggers
+            # region Triggers (special maze blocks)
             trigger_count = reader.read_ushort()
             for i in range(trigger_count):
                 trigger = Trigger(reader)
@@ -1346,6 +1158,7 @@ class Maz:
     """
 
     """
+
     def __init__(self):
 
         self.width = None
@@ -1410,7 +1223,6 @@ class Maz:
 
 
 class Champion(object):
-
     name = None
 
     def __str__(self):
@@ -1511,7 +1323,7 @@ class Savegame:
             assert reader.offset == 2182
             for i in range(600):
                 item = {
-                    "name_unidentified" : item_names[reader.read_ubyte()],
+                    "name_unidentified": item_names[reader.read_ubyte()],
                     "name": item_names[reader.read_ubyte()],
                     "flags": reader.read_ubyte(),
                     "icon": reader.read_byte(),
@@ -1590,18 +1402,18 @@ class Savegame:
             assert reader.offset == 46795
             # reader.seek(46795)
             for i in range(51, 57):
-                type = {
-                    'slots':           str(ItemSlotFlags(reader.read_ushort())),
-                    'flags':           str(ItemFlags(reader.read_ushort())),
-                    'armor_class':     reader.read_byte(),
+                item_type = {
+                    'slots': str(ItemSlotFlags(reader.read_ushort())),
+                    'flags': str(ItemFlags(reader.read_ushort())),
+                    'armor_class': reader.read_byte(),
                     'allowed_classes': str(ProfessionFlags(reader.read_ubyte())),
-                    'required_hand':   str(HandFlags(reader.read_ubyte())),
+                    'required_hand': str(HandFlags(reader.read_ubyte())),
                     'damage_vs_small': str(Dice(reader)),
-                    'damage_vs_big':   str(Dice(reader)),
-                    'unknown':         reader.read_ubyte(),
-                    'extra':           reader.read_ushort(),
+                    'damage_vs_big': str(Dice(reader)),
+                    'unknown': reader.read_ubyte(),
+                    'extra': reader.read_ushort(),
                 }
-                assets['item_types'][i] = type
+                assets['item_types'][i] = item_type
 
             c = self.champions[3]
             i = 1
@@ -1633,8 +1445,6 @@ def decode_frame_4(data, size):
             offset_dst += length
 
 
-
-
 def decode_itemtypes():
     """
 
@@ -1646,13 +1456,14 @@ def decode_itemtypes():
     with BinaryReader('data/ITEMTYPE.DAT') as reader:
         count = reader.read_ushort()
         for i in range(count):
-            type = {
+            item_type = {
                 # At which position in inventory it is allowed to be put. See InventoryUsage
                 'slots': str(ItemSlotFlags(reader.read_ushort())),
                 'flags': str(ItemFlags(reader.read_ushort())),
-                'armor_class': reader.read_byte(),        # Adds to armor class
-                'allowed_classes': str(ProfessionFlags(reader.read_ubyte())),    # Allowed for this profession. See ClassUsage
-                'required_hand': str(HandFlags(reader.read_ubyte())),   # Allowed for this hand
+                'armor_class': reader.read_byte(),  # Adds to armor class
+                'allowed_classes': str(ProfessionFlags(reader.read_ubyte())),
+            # Allowed for this profession. See ClassUsage
+                'required_hand': str(HandFlags(reader.read_ubyte())),  # Allowed for this hand
                 'damage_vs_small': str(Dice(reader)),
                 'damage_vs_big': str(Dice(reader)),
                 # 'damage_incs': reader.read_ubyte(),
@@ -1660,14 +1471,14 @@ def decode_itemtypes():
                 'extra': reader.read_ushort(),
             }
 
-            item_types.append(type)
+            item_types.append(item_type)
 
     return item_types
     # print("Item types :", json.dumps(item_types, indent=2, sort_keys=True))
 
 
 def decode_items():
-    items = []          # ITEM.DAT
+    items = []  # ITEM.DAT
     with BinaryReader('data/ITEM.DAT') as reader:
         count = reader.read_ushort()
         for i in range(count):
@@ -1676,7 +1487,7 @@ def decode_items():
                 'identified_name': reader.read_ubyte(),
                 'flags': reader.read_ubyte(),
                 'picture': reader.read_ubyte(),
-                'type': reader.read_ubyte(),           # See types below
+                'type': reader.read_ubyte(),  # See types below
 
                 # Where the item lies at position
                 # In Maze:
@@ -1736,7 +1547,6 @@ def decode_maz():
     ]
     mazes = {}
     for file in files:
-
         maze = Maz()
         maze.process(file)
         mazes[file] = maze
@@ -1748,28 +1558,28 @@ def decode_inf():
     # .INF
     files = [
         'LEVEL1',
-        'LEVEL2',
-        'LEVEL3',
-        'LEVEL4',
-        'LEVEL5',
-        'LEVEL6',
-        'LEVEL7',
-        'LEVEL8',
-        'LEVEL9',
-        'LEVEL10',
-        'LEVEL11',
-        'LEVEL12',
-        'LEVEL13',
-        'LEVEL14',
-        'LEVEL15',
-        'LEVEL16',
+        # 'LEVEL2',
+        # 'LEVEL3',
+        # 'LEVEL4',
+        # 'LEVEL5',
+        # 'LEVEL6',
+        # 'LEVEL7',
+        # 'LEVEL8',
+        # 'LEVEL9',
+        # 'LEVEL10',
+        # 'LEVEL11',
+        # 'LEVEL12',
+        # 'LEVEL13',
+        # 'LEVEL14',
+        # 'LEVEL15',
+        # 'LEVEL16',
     ]
     infs = {}
 
     for file in files:
         inf = Inf(file)
         inf.process('data/{file}'.format(file=file))
-        infs[file] = level
+        infs[file] = inf
 
     return infs
 
@@ -1790,9 +1600,9 @@ def decode_dec():
 
             for i in range(count):
                 deco = {
-                    'shapes':  [-1 if value == 255 else value for value in reader.read_ubyte(10)],
-                    'next':    reader.read_byte(),
-                    'flags':   reader.read_byte(),          # horizontal/vertical flip ?
+                    'shapes': [-1 if value == 255 else value for value in reader.read_ubyte(10)],
+                    'next': reader.read_byte(),
+                    'flags': reader.read_byte(),  # horizontal/vertical flip ?
                     'shape_x': reader.read_short(10),
                     'shape_y': reader.read_short(10),
                 }
@@ -1836,7 +1646,6 @@ def decode_vmp():
     vmp = {}
 
     for file in files:
-
         with BinaryReader('data/{file}'.format(file=file)) as reader:
             count = reader.read_ushort()
             codes = reader.read_ushort(count)
@@ -1850,10 +1659,9 @@ def decode_vmp():
 
 
 def decode_pal():
-
-    files = [ 'AZURE.PAL', 'CRIMSON.PAL', 'DUNG.PAL', 'FINALE_0.PAL', 'FINALE_1.PAL', 'FINALE_2.PAL', 'FINALE_3.PAL',
-              'FINALE_4.PAL', 'FINALE_5.PAL', 'FINALE_6.PAL', 'FINALE_7.PAL', 'FOREST.PAL', 'MEZZ.PAL', 'PALETTE0.PAL',
-              'PALETTE1.PAL', 'PALETTE2.PAL', 'PALETTE3.PAL', 'PALETTE4.PAL', 'SILVER.PAL' ]
+    files = ['AZURE.PAL', 'CRIMSON.PAL', 'DUNG.PAL', 'FINALE_0.PAL', 'FINALE_1.PAL', 'FINALE_2.PAL', 'FINALE_3.PAL',
+             'FINALE_4.PAL', 'FINALE_5.PAL', 'FINALE_6.PAL', 'FINALE_7.PAL', 'FOREST.PAL', 'MEZZ.PAL', 'PALETTE0.PAL',
+             'PALETTE1.PAL', 'PALETTE2.PAL', 'PALETTE3.PAL', 'PALETTE4.PAL', 'SILVER.PAL']
     pal = {}
 
     for file in files:
@@ -1876,9 +1684,6 @@ def decode_pal():
         pal[file] = colors
 
     return pal
-
-
-
 
 
 def decode_vcn():
@@ -1906,77 +1711,17 @@ def decode_vcn():
                 raw = reader.read_byte(32)
                 shapes.append(raw)
             vcn[file]['shapes'] = shapes
-            i = 1
 
     return vcn
 
 
-def decode_format80(reader):
-    size = reader.read_ushort()
-    type = reader.read_ushort()
-    uncompressed = reader.read_uint()
-    palette = reader.read_ushort()
-
-    if type != 0x4:
-        raise TypeError
-
-    data = [None] * uncompressed
-    dst_offset = 0
-    while True:
-        code = reader.read_ubyte()
-
-        # end code
-        if code == 0x80:
-            return data
-
-        # 0b10######
-        elif code & 0xC0 == 0x80:
-            count = code & 0x3f
-            for i in range(count):
-                data[dst_offset] = reader.read_ubyte()
-                dst_offset += 1
-
-        # 0b11######
-        elif code & 0xC0 == 0xC0:
-            count = code & 0x3f
-
-            # Large copy
-            if count < 0x3E:
-                count += 3
-                offset = reader.read_ushort()
-                for i in range(offset, offset + count):
-                    data[dst_offset] = data[i]
-                    dst_offset += 1
-
-            # Very large copy
-            elif count == 0x3F:
-                pass
-
-            else:
-                i = 1
-
-        # 0b0#######
-        elif code & 0x80 == 0:
-            count = ((code & 0x70) >> 4) + 3
-            offset = reader.read_ubyte() + ((code & 0x0F) << 8)
-            offset = dst_offset - offset
-            for i in range(offset, offset + count):
-                data[dst_offset] = data[i]
-                dst_offset += 1
-
-        else:
-            i = 1
-
-
-
-
-
 def decode_dcr():
-    files = ['BEHOLDER.DCR', 'CLERIC1.DCR', 'CLERIC2.DCR', 'CLERIC3.DCR', 'DRAGON.DCR', 'GUARD1.DCR', 'GUARD2.DCR', 'MAGE.DCR', 'MANTIS.DCR']
+    files = ['BEHOLDER.DCR', 'CLERIC1.DCR', 'CLERIC2.DCR', 'CLERIC3.DCR', 'DRAGON.DCR', 'GUARD1.DCR', 'GUARD2.DCR',
+             'MAGE.DCR', 'MANTIS.DCR']
     dcr = {}
 
     for file in files:
-        dcr[file] =  []
+        dcr[file] = []
         with BinaryReader('data/{file}'.format(file=file)) as reader:
             count = reader.read_ushort()
             for i in range(count):
@@ -2031,7 +1776,6 @@ def gen_crimson():
 
     img = Image.new('RGB', (320, 200))
 
-
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, 640, 480], 'white')
 
@@ -2042,7 +1786,7 @@ def gen_crimson():
         bottom = y + rect[3]
 
         region = cps.crop([x, y, right, bottom])
-        img.paste(region,box=[x, y])
+        img.paste(region, box=[x, y])
 
         img.save('build/CRIMSON_decoded.PNG')
 
@@ -2071,7 +1815,7 @@ def draw_dcr():
     path = './data/'
 
     for file in files:
-        dcr = assets['dcr'][file + '.DCR']
+        dcr = assets['dcr'][file]
 
         for id in range(len(dcr)):
             data = dcr[id]
@@ -2084,7 +1828,7 @@ def draw_dcr():
                 x = d['cps_x']
                 y = d['cps_y']
                 right = x + d['width']
-                lower =  y + d['height']
+                lower = y + d['height']
 
                 bg = Image.new('RGBA', (320, 200), (255, 0, 0, 0))
                 bg.paste(img, (0, 0))
@@ -2092,14 +1836,11 @@ def draw_dcr():
                 crop = bg.crop((x, y, right, lower))
                 # crop.convert('RGBA')
 
-
                 x = d['screen_x']
                 y = d['screen_y']
                 bg.paste(crop, (x, y), )
 
                 bg.save("{path}{file}_{id}_{face}.PNG".format(path=path, file=file, id=id, face=face), format='png')
-
-            i = 1
 
 
 assets = {
@@ -2117,7 +1858,6 @@ assets = {
 }
 
 if __name__ == '__main__':
-
     # PAL: color palettes
     assets['pal'] = decode_pal()
 
@@ -2161,14 +1901,15 @@ if __name__ == '__main__':
 
     # INF
     assets['inf'] = decode_inf()
+    dump('inf.json', [inf.decode(assets) for inf in assets['inf'].values()])
 
     # MAZ
     assets['maz'] = decode_maz()
 
     # Savegame
-    savegame = Savegame('data/EOBDATA2.SAV')
+    # savegame = Savegame('data/EOBDATA2.SAV')
 
-    draw_dcr()
+    # draw_dcr()
     # draw_vmp()
     # draw_dec()
 
@@ -2177,4 +1918,3 @@ if __name__ == '__main__':
     gen_crimson()
 
     exit()
-
