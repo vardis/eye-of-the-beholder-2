@@ -11,7 +11,7 @@ from location import Location
 from binary_reader import BinaryReader
 from compression import decode_format80
 import gfx
-from assets import AssetsManager
+from assets import *
 
 # TODO: Not sure about this one...
 directions = ['north', 'east', 'south', 'west']
@@ -362,7 +362,7 @@ class WallMapping:
 
     def __init__(self):
         self.index = 0  # This is the index used by the .maz file
-        self.type = 0  # Index to what backdrop wall type that is being used
+        self.wallType = 0  # Index to what backdrop wall type that is being used
         self.decorationId = 0  # Index to an optional overlay decoration image in the DecorationData.decorations
         # array in the [[eob.dat |.dat]] files
         self.eventMask = 0  #
@@ -378,15 +378,21 @@ class WallMapping:
 
         return self.flags & 0x08 == 0x08
 
+    def decode(self):
+        return {
+            "type" : self.wallType,
+            "flags" : self.flags
+        }
+
     def __str__(self):
 
         wall_type = ""
-        if self.type & 0x01 == 0x01: wall_type += "WT_SOLID, "
-        if self.type & 0x02 == 0x02: wall_type += "WT_SELFDRAW, "
-        if self.type & 0x04 == 0x04: wall_type += "WT_DOORSTUCK, "
-        if self.type & 0x08 == 0x08: wall_type += "WT_DOORMOVES, "
-        if self.type & 0x10 == 0x10: wall_type += "WT_DOOROPEN, "
-        if self.type & 0x20 == 0x20: wall_type += "WT_DOORCLOSED, "
+        if self.wallType & 0x01 == 0x01: wall_type += "WT_SOLID, "
+        if self.wallType & 0x02 == 0x02: wall_type += "WT_SELFDRAW, "
+        if self.wallType & 0x04 == 0x04: wall_type += "WT_DOORSTUCK, "
+        if self.wallType & 0x08 == 0x08: wall_type += "WT_DOORMOVES, "
+        if self.wallType & 0x10 == 0x10: wall_type += "WT_DOOROPEN, "
+        if self.wallType & 0x20 == 0x20: wall_type += "WT_DOORCLOSED, "
 
         flags = ""
         if self.flags & 0x00 == 0x00: flags += "WF_PASSNONE, "
@@ -403,7 +409,7 @@ class WallMapping:
         return "Type: {type} - Flags: {flags}".format(type=wall_type, flags=flags)
 
 
-class DecorationInfo:
+class WallDecorationInfo:
     """
 
     """
@@ -419,17 +425,13 @@ class DecorationInfo:
         else:
             return "mapping '{mapping}'".format(mapping=self.wallMapping)
 
+    def decode(self):
+        return {
+            "wallMapping" : self.wallMapping.decode()
+        }
 
-class DecorationFilename:
-    """
-    """
 
-    def __init__(self):
-        self.gfx = ""
-        self.dec = ""
 
-    def __str__(self):
-        return 'gfx: {gfx}.cps - dec:{dec}'.format(gfx=self.gfx, dec=self.dec)
 
 
 class ScriptTokens(Enum):
@@ -534,8 +536,6 @@ class Alignment(Enum):
     ChaoticEvil = 8,
 
 
-
-
 class DoorInfo:
     """
     http://eab.abime.net/showpost.php?p=533880&postcount=374
@@ -552,9 +552,9 @@ class DoorInfo:
         self.buttonRectangles = [Rectangle() for i in range(2)]  # rectangles in door?.cps size [2]
         self.buttonPositions = [Point() for i in range(2)]  # x y position where to place door button size [2,2]
 
-    def decode(self, palette_name):
+    def decode(self):
         if self.gfxFile is not None:
-            assets_manager.export_cps_image(self.gfxFile, palette_name)
+            assets_manager.export_cps_image(self.gfxFile)
 
         return {
             "command": self.command,
@@ -641,6 +641,7 @@ class MonsterGfx:
         self.label = ""
 
     def decode(self):
+        assets_manager.export_cps_image(self.label)
         return {
             "used": self.used,
             "load_prog": self.load_prog,
@@ -730,28 +731,32 @@ class Header:
 
     def __init__(self):
         self.mazeName = None
-        self.vmpVncName = None
+        self.vmpVcnName = None
         self.paletteName = None
         self.soundName = None
-        self.doors = [DoorInfo() for i in range(2)]
-        self.monsterGfx = [MonsterGfx() for i in range(2)]
+        self.decorations_assets_ref = None
+        self.doors = []
+        self.monsterGfx = []
         self.monsterTypes = []  # [MonsterType() for i in range(35)]
         self.decorations = []
         self.max_monsters = None
         self.next_hunk = None
 
     def decode(self):
+        if self.decorations_assets_ref is not None:
+            assets_manager.export_dec_file(self.decorations_assets_ref)
+
         return {
             "mazeName": self.mazeName,
-            "vmpVncName": self.vmpVncName,
+            "vmpVncName": self.vmpVcnName,
             "palette": self.paletteName,
             "sound": self.soundName,
-            "doors": [door.decode(self.paletteName) for door in self.doors],
+            "doors": [door.decode() for door in self.doors],
             "monsters": {
                 "gfx": [gfx.decode() for gfx in self.monsterGfx],
                 "types": [monster_type.decode() for monster_type in self.monsterTypes],
             },
-            "decorations": [None for deco in self.decorations],
+            "decorations": [deco.decode() for deco in self.decorations],
             "max_monsters": self.max_monsters,
             'next_hunk': self.next_hunk,
         }
@@ -977,21 +982,26 @@ class Inf:
                     b = reader.read_ubyte()
                     if b == 0xEC:
                         header.mazeName = reader.read_string(13)
-                        header.vmpVncName = reader.read_string(13)
-                        header.paletteName = header.vmpVncName.upper() + '.PAL'
+                        header.vmpVcnName = reader.read_string(13)
+                        header.paletteName = header.vmpVcnName.upper() + '.PAL'
+                        assets_manager.set_palette(header.paletteName)
 
                     b = reader.read_ubyte()
                     if b != 0xFF:
                         header.paletteName = reader.read_string(13)
-                        print("setting palette to " + header.paletteName)
+                        assets_manager.set_palette(header.paletteName)
 
                     header.soundName = reader.read_string(13)
 
                     # region Door name & Positions + offset
-                    for door in header.doors:
+                    for i in range(2):
 
                         b = reader.read_ubyte()
+
                         if b in (0xEC, 0xEA):
+                            door = DoorInfo()
+                            header.doors.append(door)
+
                             door.gfxFile = reader.read_string(13)
 
                             door.idx = reader.read_ubyte()
@@ -1015,7 +1025,7 @@ class Inf:
                                 pt.y = reader.read_ushort()
                     # endregion
 
-                    # region Monsters graphics informations
+                    # region Monsters graphics information
                     header.max_monsters = reader.read_ushort()
                     for i in range(2):
                         b = reader.read_ubyte()
@@ -1026,7 +1036,7 @@ class Inf:
                             gfx.label = reader.read_string(13)
                             gfx.unk1 = reader.read_ubyte()
 
-                            header.monsterGfx[i] = gfx
+                            header.monsterGfx.append(gfx)
                     # endregion
 
                     # region Monster definitions
@@ -1080,22 +1090,21 @@ class Inf:
                         decorateblocks = reader.read_ushort()
                         for i in range(decorateblocks):
                             b = reader.read_ubyte()
-                            deco = DecorationInfo()
                             if b == 0xEC:
-                                deco.files = DecorationFilename()
-                                deco.files.gfx = reader.read_string(13)
-                                deco.files.dec = reader.read_string(13)
+                                gfx_file = reader.read_string(13)
+                                dec_file = reader.read_string(13)
+                                assets_ref = DecorationAssetsRef(gfx_file, dec_file)
+                                header.decorations_assets_ref = assets_ref
                             elif b == 0xFB:
+                                deco = WallDecorationInfo()
                                 deco.wallMapping = WallMapping()
                                 deco.wallMapping.shapeId = reader.read_byte()
-                                deco.wallMapping.type = reader.read_ubyte()
+                                deco.wallMapping.wallType = reader.read_ubyte()
                                 deco.wallMapping.decorationId = reader.read_byte()
                                 deco.wallMapping.eventMask = reader.read_ubyte()
                                 deco.wallMapping.flags = reader.read_ubyte()
-                            else:
-                                pass
 
-                            header.decorations.append(deco)
+                                header.decorations.append(deco)
                     # endregion
 
                     # Padding
@@ -1461,7 +1470,7 @@ def decode_itemtypes():
                 'flags': str(ItemFlags(reader.read_ushort())),
                 'armor_class': reader.read_byte(),  # Adds to armor class
                 'allowed_classes': str(ProfessionFlags(reader.read_ubyte())),
-            # Allowed for this profession. See ClassUsage
+                # Allowed for this profession. See ClassUsage
                 'required_hand': str(HandFlags(reader.read_ubyte())),  # Allowed for this hand
                 'damage_vs_small': str(Dice(reader)),
                 'damage_vs_big': str(Dice(reader)),
@@ -1528,21 +1537,21 @@ def decode_items():
 def decode_maz():
     # Read wall decorations
     files = [
-        'LEVEL1',
-        'LEVEL2',
-        'LEVEL3',
-        'LEVEL4',
-        'LEVEL5',
-        'LEVEL6',
-        'LEVEL7',
-        'LEVEL8',
-        'LEVEL9',
-        'LEVEL10',
-        'LEVEL11',
-        'LEVEL12',
-        'LEVEL13',
-        'LEVEL14',
-        'LEVEL15',
+        'LEVEL1'
+        # 'LEVEL2',
+        # 'LEVEL3',
+        # 'LEVEL4',
+        # 'LEVEL5',
+        # 'LEVEL6',
+        # 'LEVEL7',
+        # 'LEVEL8',
+        # 'LEVEL9',
+        # 'LEVEL10',
+        # 'LEVEL11',
+        # 'LEVEL12',
+        # 'LEVEL13',
+        # 'LEVEL14',
+        # 'LEVEL15',
     ]
     mazes = {}
     for file in files:
