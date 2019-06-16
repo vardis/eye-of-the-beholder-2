@@ -30,7 +30,7 @@ class ConditionalD7:
 
         self.value = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "condition 0xD7(0x{value:02X})".format(
             value=self.value
@@ -63,7 +63,7 @@ class ConditionalDF:
 
         # self.value = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "condition 0xDF()".format(value=self.value)
 
@@ -94,7 +94,7 @@ class ConditionalThrowDice:
 
         self.dice = Dice(reader)
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "throw dice {dice}".format(dice=self.dice)
 
@@ -127,7 +127,7 @@ class ConditionalMenuChoice:
         self.type = reader.read_ubyte()
         self.value = reader.read_ushort()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "push menu choice, Push 0x{value:04X}".format(value=self.value)
 
@@ -158,7 +158,7 @@ class ConditionalimmediateShort:
 
         self.value = reader.read_ushort()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "value 0x{value:04X}".format(value=self.value)
 
@@ -196,7 +196,7 @@ class ConditionalOperator:
         elif self.operator == 0xf8: self.text = " OR "
         else: self.text = " [??] "
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "{value}".format(value=self.text)
 
@@ -227,7 +227,7 @@ class ConditionalContainClass:
 
         self.id = reader.read_byte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "check if character with class {name} is present"\
             .format(name=classes[self.id])
@@ -259,7 +259,7 @@ class ConditionalContainAlignment:
 
         self.id = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "need alignment {id}".format(id=self.id)
 
@@ -290,7 +290,7 @@ class ConditionalContainRace:
 
         self.id = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "check if character with race {race} is present".format(race=races[self.id])
 
@@ -317,7 +317,7 @@ class ConditionalGetTriggerFlag:
         if not reader:
             return
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "get trigger flag"
 
@@ -349,7 +349,7 @@ class ConditionalGetLevelFlag:
 
         self.flag = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "get level flag {flag}".format(flag=self.flag)
 
@@ -381,7 +381,7 @@ class ConditionalSetLevelFlag:
 
         self.flag = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "set level flag {flag}".format(flag=self.flag)
 
@@ -413,7 +413,7 @@ class ConditionalGetGlobalFlag:
 
         self.flag = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "get global flag {flag}".format(flag=self.flag)
 
@@ -445,7 +445,7 @@ class ConditionalSetGlobalFlag:
 
         self.flag = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "set Global flag {flag}".format(flag=self.flag)
 
@@ -479,7 +479,7 @@ class ConditionalGetWallSide:
         self.side = reader.read_ubyte()
         self.location = Location(reader)
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "wall side {side} at {location}".format(side=directions[self.side], location=self.location)
 
@@ -516,7 +516,7 @@ class ConditionalGetPointerItem:
         elif self.action == 0xCF:
             self.id = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.action == 0xF5:
             return "hand item"
@@ -557,7 +557,7 @@ class ConditionalGetWallIndex:
 
         self.location = Location(reader)
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "wall index at {location}".format(location=self.location)
 
@@ -585,7 +585,7 @@ class ConditionalGetPartyDirection:
         if not reader:
             return
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "party direction"
 
@@ -616,7 +616,7 @@ class ConditionalMonsterCount:
             return
         self.location = Location(reader)
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "monster count at {location}".format(location=self.location)
 
@@ -632,7 +632,7 @@ class ConditionalPushTrue:
         :param reader:
         """
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "push True"
 
@@ -648,7 +648,7 @@ class ConditionalPushFalse:
         :param reader:
         """
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "push False"
 
@@ -679,7 +679,7 @@ class ConditionalPushValue:
 
         # self.value = reader.read_ushort()
 
-    def run(self, maze, assets):
+    def run(self):
 
         # if self.value <= 128:
         return "push 0x{value:04X}".format(value=self.value)
@@ -716,7 +716,7 @@ class ConditionalItemCount:
         self.type = reader.read_ushort()
         self.location = Location(reader)
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.type == 0xFF00:
             return "maze count items at {location}".format(
@@ -764,7 +764,7 @@ class ConditionalGetParty:
         else:   # Party position
             self.location = Location(reader)
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.code == 0xF5:
             return "party inventory count of 0x{type:04X} flags: 0x{flags:02X}".format(
@@ -799,7 +799,7 @@ class ConditionalPartyVisible:
         if not reader:
             return
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "is party visible"
 
@@ -827,7 +827,7 @@ class ConditionalUnknown:
         if not reader:
             return
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "Unknown conditional"
 

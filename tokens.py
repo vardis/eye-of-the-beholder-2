@@ -67,11 +67,11 @@ class Conditional:
         self.target = reader.read_ushort()
         i = 1
 
-    def run(self, maze, assets):
+    def run(self):
 
         str = "If "
         for token in self.tokens:
-            str += token.run(maze, assets) + '|'
+            str += token.run() + '|'
 
         return str + ' else goto 0x{target:04X}'.format(target=self.target)
 
@@ -120,7 +120,7 @@ class SetWall:
         elif self.type == -19:     # change party direction
             self.direction = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.type == -9:
             return "Set walls at {location} all sides to {to:02}".format(location=self.location, to=self.to)
@@ -172,7 +172,7 @@ class CreateMonster:
         self.pocket = reader.read_ushort()
         self.weapon = reader.read_ushort()
 
-    def run(self, maze, assets):
+    def run(self):
         return "Create monster #{unit}, timer: {timer}, location: {location}, subpos: {pos}, dir: {dir}, " \
                "frame: {frame}, phase: {phase}, pause: {pause}, pocket: {pocket}, weapon: {weapon}".format(
             unit=self.unit, timer=self.timer, location=self.location, pos=self.pos, dir=directions[self.dir],
@@ -244,7 +244,7 @@ class Teleport:
 
         i = 1
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.type == -24:
             return "Teleport team to {dest}".format(dest=self.destination)
@@ -307,10 +307,10 @@ class Message:
         self.message_id = reader.read_ushort()
         self.color = reader.read_ushort()
 
-    def run(self, maze, assets):
+    def run(self):
 
-        return "Display message '{msg}' color: {color}" \
-            .format(color=self.color, msg=maze.messages[self.message_id])
+        return "Display message ID '{msg}' color: {color}" \
+            .format(color=self.color, msg=self.message_id)
 
 
 class SetFlag:
@@ -354,7 +354,7 @@ class SetFlag:
         elif self.type == -47:     # Party can't sleep ??
             pass
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.type == -17:       # -17 level
             return "Set level flag {flag}".format(flag=self.flag)
@@ -409,7 +409,7 @@ class ClearFlag:
         elif self.type == -47:  # Party ??
             pass
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.type == -17:
             return "Clear level flag {flag}".format(flag=self.flag)
@@ -454,7 +454,7 @@ class Sound:
         self.id = reader.read_ubyte()
         self.location = Location(reader)
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.location.x or self.location.y:
             return "Play environmental sound {id} at {location}".format(id=self.id, location=self.location)
@@ -480,7 +480,7 @@ class Jump:
 
         self.addr = reader.read_ushort()
 
-    def run(self, maze, assets):
+    def run(self):
         return "Jump to [0x{target:04X}]".format(target=self.addr)
 
 
@@ -499,7 +499,7 @@ class End:
         if not reader:
             return
 
-    def run(self, maze, assets):
+    def run(self):
         return "End"
 
 
@@ -518,7 +518,7 @@ class Return:
         if not reader:
             return
 
-    def run(self, maze, assets):
+    def run(self):
         return "Return"
 
 
@@ -568,7 +568,7 @@ class NewItem:
         if self.flags & 4 == 4:
             self.item_icon = reader.read_byte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.location.value == -1:
             return "New hand item id: {item_id} (value {value}, flags: {flags} 0x{flags:02x}, icon: {icon}]".format(
@@ -610,7 +610,7 @@ class Wait:
 
         self.delay = reader.read_ushort()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "Wait {delay} ticks ({ms} ms)".format(delay=self.delay, ms=self.delay * 55)
 
@@ -639,7 +639,7 @@ class UpdateScreen:
         if not reader:
             return
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "Update screen"
 
@@ -701,7 +701,7 @@ class Dialog:
             self.x = reader.read_ushort()
             self.y = reader.read_ushort()
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.type == -45:    # Display a picture from a cps file
             return "Draw sequence : \"{picture}\", rect: {rect}, X: {x}, Y: {y}, flags: 0x{flags:04X}".format(
@@ -719,16 +719,14 @@ class Dialog:
         elif self.type == -40:  # Run dialog
             return "Run dialog '{txt}', Buttons: ['{b1}', '{b2}', '{b3}']".format(
                 text_id=self.text_id,
-                txt=assets['texts'][self.text_id - 1],
-                b1=maze.messages[self.buttons[0]] if self.buttons[0] != -1 else '',
-                b2=maze.messages[self.buttons[1]] if self.buttons[1] != -1 else '',
-                b3=maze.messages[self.buttons[2]] if self.buttons[2] != -1 else '',
+                txt=self.text_id - 1,
+                b1=self.buttons[0],
+                b2=self.buttons[1],
+                b3=self.buttons[2]
             )
 
         elif self.type == -8:  #
-            return "Print dialog text: '{txt}' , Text #{y}: '{msg}'".format(
-                type=self.type, x=self.x, y=self.y, msg=maze.messages[self.y], txt=assets['texts'][self.x - 1]
-            )
+            return "Print dialog text: x message id {x} , y message id {y}".format(x=self.x, y=self.y)
 
 
 class ChangeLevel:
@@ -775,7 +773,7 @@ class ChangeLevel:
             self.level = reader.read_byte()
             self.monster = reader.read_byte(13)
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.cmd == -27:
             return "Entering to level {level}, sub level {sub} at {location} facing to {direction}".format(
@@ -814,7 +812,7 @@ class Call:
 
         self.target = reader.read_ushort()
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "Call 0x{target:04X}" \
             .format(target=self.target)
@@ -848,7 +846,7 @@ class OpenDoor:
 
         self.location = Location(reader)
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "Open door at {location}".format(location=self.location)
 
@@ -881,7 +879,7 @@ class CloseDoor:
 
         self.location = Location(reader)
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "Close door at {location}".format(location=self.location)
 
@@ -917,7 +915,7 @@ class ConsumeItem:
         if self.type != -1:
             self.location = Location(reader)
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.type == -1:
             return "Consume hand item"
@@ -970,7 +968,7 @@ class ChangeWall:
         elif self.type == -22:     # Door
             pass
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.type == -9:
             return "Change wall at {location} all sides from: {model} to: {to}".format(
@@ -1021,7 +1019,7 @@ class Launcher:
         self.direction = reader.read_ubyte()
         self.sub_position = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.type == -33:
             return "Launching spell #{spell_id} from {location} facing {direction} at subpos {subpos}".format(
@@ -1065,7 +1063,7 @@ class Turn:
         self.dir = reader.read_ubyte()
         i = 1
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.cmd == -15:
             return "Change party direction to {dir}".format(dir=directions[self.dir])
@@ -1106,7 +1104,7 @@ class Heal:
         self.target = reader.read_byte()
         self.points = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.target:
             return "Heal champion #{id} of {points} points".format(id=self.target, points=self.points)
@@ -1156,7 +1154,7 @@ class Damage:
         self.savingThrowType = reader.read_byte()
         self.savingThrowEffect = reader.read_byte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         target = 'team ' if self.target == -1 else ''
         return "Damage {target}{times} time(s) with item {item}, modifier: {mod}, flags: 0x{flags:02X}, " \
@@ -1195,7 +1193,7 @@ class GiveXP:
         self.type = reader.read_byte()
         self.amount = reader.read_ushort()
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.type == -30:
             return "Give {amount} XP to the team [type: {type}]".format(
@@ -1230,7 +1228,7 @@ class IdentifyAllItems:
 
         self.location = Location(reader)
 
-    def run(self, maze, assets):
+    def run(self):
 
         return "Identify all items at {location}".format(
             location=self.location
@@ -1264,7 +1262,7 @@ class Sequence:
 
         self.cmd = reader.read_byte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         """
         nightmare
@@ -1321,7 +1319,7 @@ class StealSmallItem:
         self.location = Location(reader)
         self.sub_position = reader.read_ubyte()
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.whom == -1:
             return "Steal small item and drop it at {location}:{subpos}".format(
@@ -1360,7 +1358,7 @@ class SpecialEvent:
 
         self.id = reader.read_ushort()
 
-    def run(self, maze, assets):
+    def run(self):
 
         if self.id == 0:
             return "Special event: lightning"
