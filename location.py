@@ -42,3 +42,9 @@ class Location:
     def coordinates(self):
         return '{x:02}x{y:02}'.format(x=self.x, y=self.y)
 
+    def export(self):
+        return {
+            "x": self.x,
+            "y": self.y
+        }
+

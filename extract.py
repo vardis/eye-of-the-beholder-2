@@ -210,7 +210,7 @@ class Monster:
         self.location = None
         self.sub_position = None
         self.direction = None
-        self.type = None
+        self.monster_type = None
         self.picture_index = None
         self.phase = None
         self.pause = None
@@ -228,7 +228,7 @@ class Monster:
         self.location = Location(reader)
         self.sub_position = reader.read_ubyte()
         self.direction = reader.read_ubyte()
-        self.type = reader.read_ubyte()
+        self.monster_type = reader.read_ubyte()
         self.picture_index = reader.read_ubyte()
         self.phase = reader.read_ubyte()
         self.pause = reader.read_ubyte()
@@ -241,13 +241,28 @@ class Monster:
         :return:
         """
 
-        return "ID {index} @ {location}|{subposition} [direction: {direction}, Timer:{timer}, type:{type}, " \
+        return "ID {index} @ {location}|{subposition} [direction: {direction}, Timer:{timer}, monster_type :{monster_type}, " \
                "picture:{picture}, phase:{phase}, pause:{pause}, weapon:{weapon}, pocket:{pocket}]".format(
             index=self.index, location=self.location, subposition=self.sub_position,
             direction=directions[self.direction],
-            timer=self.timer_id, type=self.type, picture=self.picture_index, phase=self.phase, pause=self.pause,
+            timer=self.timer_id, monster_type=self.monster_type , picture=self.picture_index, phase=self.phase, pause=self.pause,
             weapon=self.weapon, pocket=self.pocket_item
         )
+
+    def export(self):
+        return {
+            "index": self.index,
+            "timerDelay": self.timer_id,
+            "location": self.location.export(),
+            "subPos": self.sub_position,
+            "direction": self.direction,
+            "monsterType": self.monster_type,
+            "picture": self.picture_index,
+            "phase": self.phase,
+            "pause": self.pause,
+            "weapon": self.weapon,
+            "pocketItem": self.pocket_item
+        }
 
 
 class Dice:
@@ -364,6 +379,7 @@ class WallType(IntFlag):
 class WallMapping:
 
     def __init__(self):
+        # this is referenced in the .maz file
         self.wall_mapping_index = None
         self.wall_type = 0  # Index to what backdrop wall type that is being used
         self.decoration_id = 0  # Index to an optional overlay decoration image in the
@@ -1057,7 +1073,6 @@ class Inf:
                             monster_type.is_attack2 = True
                             monster_type.distant_attack = reader.read_ubyte()
                             monster_type.max_attack_count = reader.read_ubyte()
-                            print('max attack count', monster_type.max_attack_count)
                             for i in range(monster_type.max_attack_count):
                                 monster_type.attack_list[i] = reader.read_ubyte()
                                 reader.read_ubyte()
@@ -1141,7 +1156,7 @@ class Inf:
             "triggers": {trigger.location.coordinates(): trigger.run(self, assets) for trigger in self.triggers},
             "messages": {k: v for k, v in enumerate(self.messages)},
             "scripts": self.script.extract(),
-            "monsters": []
+            "monsters": [ monster.export() for monster in self.monsters]
         }
 
 
@@ -1256,40 +1271,6 @@ def decode_inf():
     return infs
 
 
-def decode_dec():
-    # .DEC
-
-    files = ['AZURE.DEC', 'BROWN.DEC', 'CRIMSON.DEC', 'FOREST.DEC', 'MEZZ.DEC', 'SILVER.DEC']
-    decorations = {}
-
-    for file in files:
-        decorations[file] = {
-            'decorations': [],
-            'shapes': [],
-        }
-        with BinaryReader('data/{file}'.format(file=file)) as reader:
-            count = reader.read_ushort()
-
-            for i in range(count):
-                deco = {
-                    'shapes': [-1 if value == 255 else value for value in reader.read_ubyte(10)],
-                    'next': reader.read_byte(),
-                    'flags': reader.read_byte(),  # horizontal/vertical flip ?
-                    'shape_x': reader.read_short(10),
-                    'shape_y': reader.read_short(10),
-                }
-                decorations[file]['decorations'].append(deco)
-
-            count = reader.read_ushort()
-            for i in range(count):
-                rect = list(reader.read_ushort(4))
-                rect[0] *= 8
-                rect[2] *= 8
-                decorations[file]['shapes'].append(rect)
-
-    return decorations
-
-
 def decode_vmp():
     files = ['CRIMSON.VMP', 'DUNG.VMP', 'FOREST.VMP', 'MEZZ.VMP', 'SILVER.VMP']
     vmp = {}
@@ -1305,34 +1286,6 @@ def decode_vmp():
         }
 
     return vmp
-
-
-def decode_pal():
-    files = ['AZURE.PAL', 'CRIMSON.PAL', 'DUNG.PAL', 'FINALE_0.PAL', 'FINALE_1.PAL', 'FINALE_2.PAL', 'FINALE_3.PAL',
-             'FINALE_4.PAL', 'FINALE_5.PAL', 'FINALE_6.PAL', 'FINALE_7.PAL', 'FOREST.PAL', 'MEZZ.PAL', 'PALETTE0.PAL',
-             'PALETTE1.PAL', 'PALETTE2.PAL', 'PALETTE3.PAL', 'PALETTE4.PAL', 'SILVER.PAL']
-    pal = {}
-
-    for file in files:
-        colors = []
-
-        with BinaryReader('data/{file}'.format(file=file)) as reader:
-            for i in range(256):
-                r = reader.read_byte()
-                g = reader.read_byte()
-                b = reader.read_byte()
-
-                colors.append({
-                    "r": r,
-                    "g": g,
-                    "b": b,
-                })
-
-                i = 1
-
-        pal[file] = colors
-
-    return pal
 
 
 def decode_vcn():
@@ -1508,12 +1461,6 @@ assets = {
 
 if __name__ == '__main__':
     assets_manager.export_texts()
-
-    # PAL: color palettes
-    assets['pal'] = decode_pal()
-
-    # DEC: decoration rectangle
-    assets['dec'] = decode_dec()
 
     # VMP: information about how to put together the blocks defined in the corresponding vcn files, into proper walls
     assets['vmp'] = decode_vmp()
