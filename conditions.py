@@ -1,7 +1,6 @@
 
-from extract import Dice
-from extract import Location
-from extract import races, classes, directions
+from entities import *
+from flags import races, classes, directions
 
 
 class ConditionalD7:

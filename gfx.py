@@ -1,23 +1,16 @@
-import os
-import struct
-import json
-from PIL import Image, ImageDraw
+from PIL import Image
+
 from binary_reader import BinaryReader
 from compression import decode_format80
 
 
-def load_cps(cps_filename, pal_filename):
+def load_cps(cps_filename, palette=None):
     with BinaryReader(cps_filename) as reader:
         cps_data = decode_format80(reader)
 
-        if pal_filename is not None:
-            pal = load_palette(pal_filename)
-            # with open(cps_filename, 'rb') as fcps:
-            #     compressed_data = fcps.read()[10:]
-
-            # create an new image in palette mode and fill it
+        if palette is not None:
             img = Image.new('P', (320, 200))
-            img.putpalette(pal)
+            img.putpalette(palette)
         else:
             img = Image.new('RGB', (320, 200))
 

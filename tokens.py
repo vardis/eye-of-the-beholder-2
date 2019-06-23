@@ -1,5 +1,5 @@
 from conditions import *
-from location import Location
+from entities import Location
 from extract import directions
 
 

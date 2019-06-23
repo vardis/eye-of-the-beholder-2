@@ -1,8 +1,22 @@
-import gfx
+import json
 import os.path
 import time
-import json
-from binary_reader import BinaryReader
+
+from PIL import Image
+
+import gfx
+from binary_reader import BinaryReader, BinaryArrayData
+from compression import decode_format80
+from entities import Dice
+from flags import *
+
+BLOCKS_ROWS = 15
+BLOCKS_COLUMNS = 22
+BLOCKS_SIZE = 8
+
+VMP_EXTENSION = '.VMP'
+
+DCR_EXTENSION = '.DCR'
 
 CPS_EXTENSION = ".CPS"
 
@@ -78,7 +92,7 @@ class DecorationsAsset:
             "image": self.image_filename,
             "decorations": [dec.export() for dec in self.decorations],
             "rectangles": [rect.export() for rect in self.rectangles],
-            "originalAssets" : self.original_assets.export()
+            "originalAssets": self.original_assets.export()
         }
 
 
@@ -142,6 +156,67 @@ class Maze:
         return self.height
 
 
+class DcrAsset:
+    class SideData:
+        def __init__(self):
+            self.cps_x = -1
+            self.cps_y = -1
+            self.width = 0
+            self.height = 0
+            self.screen_x = 0
+            self.screen_y = 0
+
+        def export(self):
+            return {
+                "cpsX": self.cps_x,
+                "cpsY": self.cps_y,
+                "width": self.width,
+                "height": self.height,
+                "screenX": self.screen_x,
+                "screenY": self.screen_y
+            }
+
+    def __init__(self, filename):
+        self.filename = filename
+        self.sides = {}
+
+    def export(self):
+        return {
+            "filename": self.filename,
+            "sides": [side.export() for side in self.sides]
+        }
+
+
+class VmpAsset:
+    class TilesInfo:
+        def __init__(self):
+            self.gfx = None
+            self.flipped_tiles = []
+
+        def export(self):
+            return {
+                'gfx': self.gfx,
+                'flipped': self.flipped_tiles
+            }
+
+    def __init__(self):
+        self.name = None
+        self.bg_tiles = None
+        self.wall_tiles = None
+        self.bg_palette = []
+        self.wall_palette = []
+        self.blocks = None
+        self.exported = False
+        self.bg_tiles_info = None
+        self.wall_tiles_infos = []
+
+    def export(self):
+        return {
+            'background': self.bg_tiles_info.export(),
+            'wallTiles': [t.export() for t in self.wall_tiles_infos]
+        }
+
+
 class AssetsManager:
     DATA_DIR = "data/"
     BUILD_DIR = "build/"
@@ -151,6 +226,7 @@ class AssetsManager:
         self.decorations = {}
         self.texts = []
         self.mazes = {}
+        self.vmps = {}
 
         self.id_gen = 0
         self.data_dir = data_dir
@@ -160,12 +236,14 @@ class AssetsManager:
         # if not self.build_dir.endswith("/"): self.build_dir += "/"
 
         self.palette_filename = None
+        self.palette = None
 
     def set_palette(self, palette_filename):
         palette_filename = os.path.join(self.data_dir, palette_filename.upper())
 
         if not palette_filename.endswith(PAL_EXTENSION): palette_filename += PAL_EXTENSION
         self.palette_filename = palette_filename
+        self.palette = gfx.load_palette(self.palette_filename)
 
     def export_cps_image(self, cps_filename):
 
@@ -175,15 +253,9 @@ class AssetsManager:
         rel_cps_filename = os.path.join(self.data_dir, cps_filename.upper())
         if not rel_cps_filename.endswith(CPS_EXTENSION): rel_cps_filename += CPS_EXTENSION
 
-        img = gfx.load_cps(rel_cps_filename, self.palette_filename)
-        exported_filename = os.path.join(self.build_dir, "%s.png" % cps_filename.lower())
-        img.save(exported_filename)
-
-        image_asset = ImageAsset(self.id_gen, exported_filename, full_path=os.path.abspath(exported_filename))
+        img = gfx.load_cps(rel_cps_filename, self.palette)
+        image_asset = self._export_image(img, cps_filename)
         image_asset.original_asset = rel_cps_filename
-
-        self.images[cps_filename] = image_asset
-        self.id_gen += 1
 
         return image_asset
 
@@ -248,6 +320,11 @@ class AssetsManager:
 
                 self.texts.append(reader.read_string(length))
 
+        with open(os.path.join(self.build_dir, 'texts.json'), 'w') as handle:
+            json.dump(self.texts, handle, indent=True, sort_keys=False)
+
+        return self.texts
+
     def export_maze(self, maze_name):
         maze_filename = maze_name.upper()
         if not maze_filename.endswith(MAZ_EXTENSION):
@@ -283,6 +360,37 @@ class AssetsManager:
         with open(os.path.join(self.build_dir, maze_name), 'w') as handle:
             json.dump(maze.__dict__, handle, indent=True, sort_keys=False)
 
+    def load_dcr(self, name=''):
+
+        filename = name.upper()
+        if not filename.endswith(DCR_EXTENSION):
+            filename += DCR_EXTENSION
+
+        rel_filename = os.path.join(self.data_dir, filename)
+        if not os.path.exists(rel_filename):
+            return None
+
+        with BinaryReader(rel_filename) as reader:
+            count = reader.read_ushort()
+            for i in range(count):
+                dcr_asset = DcrAsset(name)
+
+                sides = []
+                for j in range(6):
+                    side = DcrAsset.SideData()
+                    side.cps_x = reader.read_ubyte() * 8
+                    side.cps_y = reader.read_ubyte()
+                    side.width = reader.read_ubyte() * 8
+                    side.height = reader.read_ubyte()
+                    side.screen_x = reader.read_ubyte()
+                    side.screen_y = reader.read_ubyte()
+
+                    sides.append(side)
+
+                dcr_asset.sides = sides
+
+        return dcr_asset
+
     def get_decorations(self, dec_assets_ref):
         return self.decorations[str(dec_assets_ref)]
 
@@ -294,3 +402,232 @@ class AssetsManager:
 
     def get_maze(self, maze_name):
         return self.mazes[maze_name]
+
+    def export_items(self):
+        items = []  # ITEM.DAT
+        items_names = []
+
+        with BinaryReader('data/ITEM.DAT') as reader:
+            count = reader.read_ushort()
+            for i in range(count):
+                item = {
+                    'unidentified_name': reader.read_ubyte(),
+                    'identified_name': reader.read_ubyte(),
+                    'flags': reader.read_ubyte(),
+                    'picture': reader.read_ubyte(),
+                    'type': reader.read_ubyte(),  # See types below
+
+                    # Where the item lies at position
+                    # In Maze:
+                    #      0..3-> Bottom
+                    #      4..7-> Wall (N,E,S,W)
+                    # For EotB I: 0..3-> Floor NW,NE,SW,SE
+                    #                8-> Compartment
+                    # If in inventory:
+                    #      0..26-> Position in Inventory
+                    'sub_position': reader.read_ubyte(),
+
+                    # Position in maze x + y * 32, consumed if <= 0
+                    'coordinate': reader.read_ushort(),
+                    'next': reader.read_ushort(),
+                    'previous': reader.read_ushort(),
+
+                    # Level, where the item lies, 0 <= no level
+                    'level': reader.read_ubyte(),
+
+                    # The value of item, -1 if consumed
+                    'value': reader.read_byte(),
+                }
+                pos = divmod(item['coordinate'], 32)
+                item['coordinate'] = {'x': pos[1], 'y': pos[0]}
+                items.append(item)
+
+            count = reader.read_ushort()
+            for i in range(count):
+                name = reader.read_string(35)
+                items_names.append(name)
+
+            for item in items:
+                item['unidentified_name'] = items_names[item['unidentified_name']]
+                item['identified_name'] = items_names[item['identified_name']]
+
+            with open(os.path.join(self.build_dir, 'items.json'), 'w') as handle:
+                json.dump(items, handle, indent=True, sort_keys=False)
+
+    def export_item_types(self):
+        item_types = []
+        with BinaryReader(os.path.join(self.data_dir, 'ITEMTYPE.DAT')) as reader:
+            count = reader.read_ushort()
+            for i in range(count):
+                item_type = {
+                    # At which position in inventory it is allowed to be put. See InventoryUsage
+                    'slots': str(ItemSlotFlags(reader.read_ushort())),
+                    'flags': str(ItemFlags(reader.read_ushort())),
+                    'armor_class': reader.read_byte(),  # Adds to armor class
+                    'allowed_classes': str(ProfessionFlags(reader.read_ubyte())),
+                    # Allowed for this profession. See ClassUsage
+                    'allowed_hands': str(HandFlags(reader.read_ubyte())),  # Allowed for this hand
+                    'damage_vs_small': str(Dice(reader)),
+                    'damage_vs_big': str(Dice(reader)),
+                    # 'damage_incs': reader.read_ubyte(),
+                    'unknown': reader.read_ubyte(),
+                    'usage': str(ItemTypeUsage(reader.read_ushort())),
+                }
+
+                item_types.append(item_type)
+
+        with open(os.path.join(self.build_dir, 'item_types.json'), 'w') as handle:
+            json.dump(item_types, handle, indent=True, sort_keys=False)
+
+    def load_vmp(self, vmp_name=''):
+
+        if vmp_name in self.vmps:
+            return self.vmps[vmp_name]
+
+        vmp_filename = vmp_name.upper()
+        if not vmp_filename.endswith(VMP_EXTENSION):
+            vmp_filename += VMP_EXTENSION
+
+        vmp_filename = os.path.join(self.data_dir, vmp_filename)
+        if not os.path.exists(vmp_filename):
+            raise Exception('Cannot find VMP file %s' % vmp_filename)
+
+        vcn_filename = os.path.join(self.data_dir, vmp_name.upper() + '.VCN')
+        if not os.path.exists(vcn_filename):
+            raise Exception('Cannot find the corresponding VCN file %s' % vcn_filename)
+
+        with BinaryReader(vmp_filename) as reader:
+            shorts_per_tileset = 431
+            file_size = 2 * reader.read_ushort()
+            num_wall_types = int(file_size / (2 * shorts_per_tileset)) - 1
+            bg_tiles = reader.read_ushort(22 * 15)
+            _ = reader.read_ushort(101)
+
+            tiles = []
+            for _ in range(num_wall_types):
+                wall_tiles = reader.read_ushort(shorts_per_tileset)
+                tiles.append(wall_tiles)
+
+        with BinaryReader(vcn_filename) as vcn_reader:
+            vcn_data = decode_format80(vcn_reader)
+
+        vcn_reader = BinaryArrayData(vcn_data)
+
+        num_blocks = vcn_reader.read_ushort()
+        bg_palette_indices = vcn_reader.read_ubyte(16)
+        bg_palette = []
+        for i in range(16):
+            bg_palette.append(self.palette[3 * bg_palette_indices[i]])
+            bg_palette.append(self.palette[3 * bg_palette_indices[i] + 1])
+            bg_palette.append(self.palette[3 * bg_palette_indices[i] + 2])
+
+        walls_palette_indices = vcn_reader.read_ubyte(16)
+        walls_palette = []
+        for i in range(16):
+            walls_palette.append(self.palette[3 * walls_palette_indices[i]])
+            walls_palette.append(self.palette[3 * walls_palette_indices[i] + 1])
+            walls_palette.append(self.palette[3 * walls_palette_indices[i] + 2])
+
+        blocks = []
+        for _ in range(num_blocks):
+            raw = vcn_reader.read_byte(32)
+            blocks.append(raw)
+
+        vmp_asset = VmpAsset()
+        vmp_asset.name = vmp_name
+        vmp_asset.bg_palette = bg_palette
+        vmp_asset.wall_palette = walls_palette
+        vmp_asset.bg_tiles = bg_tiles
+        vmp_asset.wall_tiles = tiles
+        vmp_asset.blocks = blocks
+
+        self.vmps[vmp_name] = vmp_asset
+
+        return vmp_asset
+
+    def _export_image(self, pil_img, filename):
+        exported_filename = os.path.join(self.build_dir, "%s.png" % filename.lower())
+        pil_img.convert('RGB').save(exported_filename)
+
+        image_asset = ImageAsset(self.id_gen, exported_filename, full_path=os.path.abspath(exported_filename))
+
+        self.images[filename] = image_asset
+        self.id_gen += 1
+        return image_asset
+
+    def export_vmp(self, vmp_name):
+        if vmp_name not in self.vmps:
+            raise Exception("You must first load the VMP " + vmp_name)
+
+        vmp = self.vmps[vmp_name]
+        if vmp.exported:
+            return
+
+        vmp.exported = True
+
+        num_wall_types = len(vmp.wall_tiles)
+
+        for i in range(num_wall_types):
+            flipped_tiles = []
+            img = self._create_tileset_image(vmp.wall_palette, vmp.wall_tiles[i], vmp.blocks, flipped_tiles)
+            gfx_filename = '%s_tiles_%d' % (vmp_name, i)
+            self._export_image(img, gfx_filename)
+
+            tiles_info = VmpAsset.TilesInfo()
+            tiles_info.flipped_tiles = flipped_tiles
+            tiles_info.gfx = gfx_filename
+
+            vmp.wall_tiles_infos.append(tiles_info)
+
+        flipped_tiles = []
+        img = self._create_tileset_image(vmp.bg_palette, vmp.bg_tiles, vmp.blocks, flipped_tiles)
+        bg_image_filename = '%s_tiles_bg' % vmp_name
+        self._export_image(img, bg_image_filename)
+
+        tiles_info = VmpAsset.TilesInfo()
+        tiles_info.flipped_tiles = flipped_tiles
+        tiles_info.gfx = bg_image_filename
+        vmp.bg_tiles_info = tiles_info
+
+        vmp_filename = '%s.vmp.json' % vmp_name
+        with open(os.path.join(self.build_dir, vmp_filename), 'w') as handle:
+            json.dump(vmp.export(), handle, indent=True, sort_keys=False)
+
+        return vmp
+
+    def _create_tileset_image(self, palette, tileset, block_data, flipped_tiles):
+        img = Image.new('P', (BLOCKS_COLUMNS * BLOCKS_SIZE, BLOCKS_ROWS * BLOCKS_SIZE))
+        img.putpalette(palette)
+
+        img_data = [255 for _ in range(BLOCKS_COLUMNS * BLOCKS_SIZE * BLOCKS_ROWS * BLOCKS_SIZE)]
+        PIX_PER_BLOCK_ROW = BLOCKS_COLUMNS * BLOCKS_SIZE * BLOCKS_SIZE
+        PIX_PER_ROW = BLOCKS_COLUMNS * BLOCKS_SIZE
+
+        for block_y in range(BLOCKS_ROWS):
+            for block_x in range(BLOCKS_COLUMNS):
+
+                tile_index = block_y * BLOCKS_COLUMNS + block_x
+                tile = tileset[tile_index]
+                flip = (tile & 0x04000) == 0x04000
+
+                if flip:
+                    print('flip block %d,%d' % (block_x, block_y))
+                    flipped_tiles.append(tile_index)
+
+                block_index = tile & 0x3fff
+
+                block = block_data[block_index]
+
+                for y in range(8):
+                    for x in range(4):
+                        word = block[x + y * 4]
+                        col1 = word >> 4
+                        col2 = word & 0x0f
+                        img_coords = block_y * PIX_PER_BLOCK_ROW + block_x * BLOCKS_SIZE + y * PIX_PER_ROW + 2 * x
+                        img_data[img_coords] = col1
+                        img_data[img_coords + 1] = col2
+                        # img_data.append(col1)
+                        # img_data.append(col2)
+
+        img.putdata(img_data)
+        return img

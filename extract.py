@@ -2,162 +2,16 @@
 
 import os
 import struct
-import json
-from PIL import Image, ImageDraw
 
 import tokens
-from enum import Enum, IntFlag
-from location import Location
-from compression import decode_format80
 from assets import *
-
-# TODO: Not sure about this one...
-directions = ['north', 'east', 'south', 'west']
+from entities import *
+from flags import *
 
 DATA_DIR = "data/"
 BUILD_DIR = "build/"
 
 assets_manager = AssetsManager()
-
-classes = {
-    0x00: "Fighter",
-    0x01: "Ranger",
-    0x02: "Paladin",
-    0x03: "Mage",
-    0x04: "Cleric",
-    0x05: "Thief",
-    0x06: "Fighter/Cleric",
-    0x07: "Fighter/Thief",
-    0x08: "Fighter/Mage",
-    0x09: "Fighter/Mage/Thief",
-    0x0A: "Thief/Mage",
-    0x0B: "Cleric/Thief",
-    0x0C: "Fighter/Cleric/Mage",
-    0x0D: "Ranger/Cleric",
-    0x0E: "Cleric/Mage",
-    0x0F: '0x0F',
-    0x10: '0x10'
-}
-
-races = {
-    0x00: 'human male',
-    0x01: 'human female',
-    0x02: 'elf male',
-    0x03: 'elf female',
-    0x04: 'half-elf male',
-    0x05: 'half-elf female',
-    0x06: 'dwarf male',
-    0x07: 'dwarf female',
-    0x08: 'gnome male',
-    0x09: 'gnome female',
-    0x0A: 'halfling male',
-    0x0B: 'halfling female',
-}
-
-alignments = {
-    0x00: "Lawful Good",
-    0x01: "Neutral Good",
-    0x02: "Chaotic Good",
-    0x03: "Lawful Neutral",
-    0x04: "True Neutral",
-    0x05: "Chaotic Neutral",
-    0x06: "Lawful Evil",
-    0x07: "Neutral Evil",
-    0x08: "Chaotic Evil",
-}
-
-
-class ClassUage(IntFlag):
-    """
-
-    """
-    Null = 0x00
-    Fighter = 0x01
-    Mage = 0x02
-    Cleric = 0x04
-    Thief = 0x08
-
-
-class HandFlags(IntFlag):
-    """
-
-    """
-    Primary = 0x0,
-    Secondary = 0x1,
-    Both = 0x2,
-
-
-class ItemFlags(IntFlag):
-    """
-    Item's flags
-    """
-    Nothing = 0x00,
-    Flag01 = 0x01
-    ArmorBonus = 0x02
-    Flag04 = 0x04  # Enchanted ??
-    isVampiric = 0x08  # Sucks damage points from target to attacker
-    SpeedBonus = 0x10
-    isCursed = 0x20
-    isIdentified = 0x40
-    GlowMagic = 0x80
-
-
-class ProfessionFlags(IntFlag):
-    """
-
-    """
-    Fighter = 0x01  #
-    Ranger = 0x02  #
-    Paladin = 0x04  #
-    Mage = 0x08  #
-    Cleric = 0x10  #
-    Thief = 0x20  #
-
-
-class ItemSlotFlags(IntFlag):
-    """
-
-    """
-    Quiver = 0x01,
-    Armour = 0x02,
-    Bracers = 0x04,
-    Backpack = 0x08,
-    Boots = 0x10,
-    Helmet = 0x20,
-    Necklace = 0x40,
-    Belt = 0x80,
-    Ring = 0x100,
-
-
-ItemAction = {
-    '0': 'Nothing',
-    '1': '1',
-    '2': 'Ammunition',
-    '3': 'Use ammunition',
-    '4': 'Amulet | coin | eye of talon...',
-    '5': 'Open mage spell window',
-    '6': 'Open cleric spell window',
-    '7': "Food",
-    '8': "Bones",
-    '9': "Glass sphere | Magic dust | Scroll",
-    '10': "Scroll",
-    '11': "Parchment (something to read)",
-    '12': "Stone item (Cross, Dagger, Gem...)",
-    '13': "Key",
-    '14': "Potion",
-    '15': "Gem",
-    '18': "0x12",
-    '19': "Blow horn (N/S/W/E wind...)",
-    '20': "Amulet of Life or Death",
-    '128': "Range Party member",
-    '129': "Range Close",
-    '130': "Range Medium",
-    '131': "Range Long",
-    '132': "Lock picks",
-    '138': "Amulet",
-    '144': "Crimson ring",
-    '146': "Wand",
-}
 
 
 class Monster:
@@ -245,7 +99,8 @@ class Monster:
                "picture:{picture}, phase:{phase}, pause:{pause}, weapon:{weapon}, pocket:{pocket}]".format(
             index=self.index, location=self.location, subposition=self.sub_position,
             direction=directions[self.direction],
-            timer=self.timer_id, monster_type=self.monster_type , picture=self.picture_index, phase=self.phase, pause=self.pause,
+            timer=self.timer_id, monster_type=self.monster_type, picture=self.picture_index, phase=self.phase,
+            pause=self.pause,
             weapon=self.weapon, pocket=self.pocket_item
         )
 
@@ -265,117 +120,6 @@ class Monster:
         }
 
 
-class Dice:
-    """
-
-    """
-
-    def __init__(self, reader=None):
-        self.rolls = 0
-        self.sides = 0
-        self.base = 0
-
-        self.process(reader)
-
-    def process(self, reader):
-        """
-
-        :param reader:
-        :return:
-        """
-        if not reader:
-            return
-
-        self.rolls = reader.read_ubyte()
-        self.sides = reader.read_ubyte()
-        self.base = reader.read_ubyte()
-
-    def decode(self):
-        return {
-            'rolls': self.rolls,
-            'sides': self.sides,
-            'base': self.base,
-        }
-
-    def __str__(self):
-        return "({rolls}d{sides})+{base}".format(rolls=self.rolls, sides=self.sides, base=self.base)
-
-
-class Rectangle:
-    """
-
-    """
-    x = 0
-    y = 0
-    width = 0
-    height = 0
-
-    def decode(self):
-        return {
-            "x": self.x,
-            "y": self.y,
-            "width": self.width,
-            "height": self.height
-        }
-
-    def __str__(self):
-        """
-
-        :return:
-        """
-
-        return "[x:{x} y:{y} - width:{width} height:{height}]".format(
-            x=self.x, y=self.y, width=self.width, height=self.height
-        )
-
-
-class Point:
-    """
-
-    """
-    x = 0
-    y = 0
-
-    def decode(self):
-        return {
-            "x": self.x,
-            "y": self.y,
-        }
-
-    def __str__(self):
-        """
-
-        :return:
-        """
-        return "[x:{x} y:{y}]".format(x=self.x, y=self.y)
-
-
-class WallFlags(IntFlag):
-    # @formatter:off
-    PASS_NONE    = 0x00  # Can be passed by no one
-    PARTY_PASS   = 0x01  # Can be passed by the player, big item
-    SMALL_PASS   = 0x02  # Can be passed by a small item
-    MONSTER_PASS = 0x04  # Can be passed by a monster
-    PASS_ALL     = 0x07  # Can be passed by all
-    IS_DOOR      = 0x08  # Is a door
-    DOOR_OPEN    = 0x10  # The door is open
-    DOOR_CLOSED  = 0x20  # The door is closed
-    DOOR_KNOW    = 0x40  # The door has a knob
-    ONLY_DEC     = 0x80  # No wall, only decoration, items visible
-    # @formatter:on
-
-
-class WallType(IntFlag):
-    # @formatter:off
-    SOLID       = 0x01  # Is a solid wall, draw top
-    SELF_DRAW   = 0x02  # Is a stair, for example, no bottom
-    DOOR_STUCK  = 0x04  # The door is stuck
-    DOOR_MOVES  = 0x08  # The door is opening
-    DOOR_OPEN   = 0x10  # The door is open
-    DOOR_CLOSED = 0x20  # The door is closed
-    # @formatter:on
-
-
 class WallMapping:
 
     def __init__(self):
@@ -390,12 +134,10 @@ class WallMapping:
 
     @property
     def is_blocking(self):
-
         return self.flags & 0x00 == 0x00
 
     @property
     def is_door(self):
-
         return self.flags & 0x08 == 0x08
 
     def export(self):
@@ -489,51 +231,6 @@ class ConditionValue(Enum):
     VALUE_GET_LEVEL_FLAG = 0xef,
 
 
-class Class(Enum):
-    Fighter = 0x0,
-    Ranger = 0x1,
-    Paladin = 0x2,
-    Mage = 0x3,
-    Cleric = 0x4,
-    Thief = 0x5,
-    FighterCleric = 0x6,
-    FighterThief = 0x7,
-    FighterMage = 0x8,
-    FighterMageThief = 0x9,
-    ThiefMage = 0xa,
-    ClericThief = 0xb,
-    FighterClericMage = 0xc,
-    RangerCleric = 0xd,
-    ClericMage = 0xe,
-
-
-class Race(Enum):
-    HumanMale = 0x0,
-    HumanFemale = 0x1,
-    ElfMale = 0x2,
-    ElfFemale = 0x3,
-    HalfElfMale = 0x4,
-    HalfElfFemale = 0x5,
-    DwarfMale = 0x6,
-    DwarfFemale = 0x7,
-    GnomeMale = 0x8,
-    GnomeFemale = 0x9,
-    HalflingMale = 0xa,
-    HalflingFemale = 0xb,
-
-
-class Alignment(Enum):
-    LawfullGood = 0,
-    NeutralGood = 1,
-    ChaoticGood = 2,
-    LawfullNeutral = 3,
-    TrueNeutral = 4,
-    ChaoticNeutral = 5,
-    LawfullEvil = 6,
-    NeutralEvil = 7,
-    ChaoticEvil = 8,
-
-
 class DoorInfo:
     """
     http://eab.abime.net/showpost.php?p=533880&postcount=374
@@ -560,10 +257,10 @@ class DoorInfo:
             "type": self.type,
             "knob": self.knob,
             "gfxFile": self.gfxFile,
-            "doorRectangle": [rect.decode() for rect in self.doorRectangles],
+            "doorRectangle": [rect.export() for rect in self.doorRectangles],
             "buttons": {
-                "rectangles": [rect.decode() for rect in self.buttonRectangles],
-                "positions": [point.decode() for point in self.buttonPositions],
+                "rectangles": [rect.export() for rect in self.buttonRectangles],
+                "positions": [point.export() for point in self.buttonPositions],
             }
         }
 
@@ -603,10 +300,10 @@ class MonsterType:
             "unknown0": self.unk0,
             "thac0": self.thac0,
             "unknown1": self.unk1,
-            "hp": self.hp_dice.decode(),
+            "hp": self.hp_dice.export(),
             "attacks": {
                 "count": self.number_of_attacks,
-                "dices": [dice.decode() for dice in self.attack_dice],
+                "dices": [dice.export() for dice in self.attack_dice],
                 "special_flags": self.special_attack_flag,
                 "abilities_flags": self.abilities_flags,
                 "sound": self.attack_sound,
@@ -619,10 +316,10 @@ class MonsterType:
             "unknown3": self.unk3,
             "is_attack2": self.is_attack2,
             "max_attack_count": self.max_attack_count,
-            "attack_list": [i for i in self.attack_list],
+            "attack_list": self.attack_list,
             "turn_undead": self.turn_undead_value,
             "unknown4": self.unk4,
-            "unknown5": [i for i in self.unk5],
+            "unknown5": self.unk5,
         }
 
 
@@ -638,18 +335,20 @@ class MonsterGfx:
         self.unk1 = None
         self.label = ""
 
-    def decode(self):
+    def __str__(self):
+        return self.label
+
+    def export(self):
         assets_manager.export_cps_image(self.label)
+        dcr = assets_manager.load_dcr(self.label)
         return {
             "used": self.used,
             "load_prog": self.load_prog,
             "unknown0": self.unk0,
             "unknown1": self.unk1,
-            "label": self.label
+            "label": self.label,
+            "sideData": dcr.export() if dcr is not None else None
         }
-
-    def __str__(self):
-        return self.label
 
 
 class Trigger:
@@ -748,6 +447,9 @@ class Header:
 
         assets_manager.export_maze(self.maze_name)
 
+        assets_manager.load_vmp(self.vmpVcnName)
+        assets_manager.export_vmp(self.vmpVcnName)
+
         return {
             "mazeName": self.maze_name,
             "vmpVncName": self.vmpVcnName,
@@ -755,7 +457,7 @@ class Header:
             "sound": self.soundName,
             "doors": [door.decode() for door in self.doors],
             "monsters": {
-                "gfx": [gfx.decode() for gfx in self.monsterGfx],
+                "gfx": [gfx.export() for gfx in self.monsterGfx],
                 "types": [monster_type.decode() for monster_type in self.monsterTypes],
             },
             "decorations": {
@@ -1147,7 +849,7 @@ class Inf:
 
             # endregion
 
-    def decode(self, assets):
+    def export(self, assets):
         return {
             "name": self.name,
             "timers": [timer for timer in self.timers],
@@ -1156,89 +858,8 @@ class Inf:
             "triggers": {trigger.location.coordinates(): trigger.run(self, assets) for trigger in self.triggers},
             "messages": {k: v for k, v in enumerate(self.messages)},
             "scripts": self.script.extract(),
-            "monsters": [ monster.export() for monster in self.monsters]
+            "monsters": [monster.export() for monster in self.monsters]
         }
-
-
-def decode_itemtypes():
-    """
-
-    types:
-     47 => rings
-     31 => eatable/food
-    """
-    item_types = []
-    with BinaryReader('data/ITEMTYPE.DAT') as reader:
-        count = reader.read_ushort()
-        for i in range(count):
-            item_type = {
-                # At which position in inventory it is allowed to be put. See InventoryUsage
-                'slots': str(ItemSlotFlags(reader.read_ushort())),
-                'flags': str(ItemFlags(reader.read_ushort())),
-                'armor_class': reader.read_byte(),  # Adds to armor class
-                'allowed_classes': str(ProfessionFlags(reader.read_ubyte())),
-                # Allowed for this profession. See ClassUsage
-                'required_hand': str(HandFlags(reader.read_ubyte())),  # Allowed for this hand
-                'damage_vs_small': str(Dice(reader)),
-                'damage_vs_big': str(Dice(reader)),
-                # 'damage_incs': reader.read_ubyte(),
-                'unknown': reader.read_ubyte(),
-                'extra': reader.read_ushort(),
-            }
-
-            item_types.append(item_type)
-
-    return item_types
-    # print("Item types :", json.dumps(item_types, indent=2, sort_keys=True))
-
-
-def decode_items():
-    items = []  # ITEM.DAT
-    with BinaryReader('data/ITEM.DAT') as reader:
-        count = reader.read_ushort()
-        for i in range(count):
-            item = {
-                'unidentified_name': reader.read_ubyte(),
-                'identified_name': reader.read_ubyte(),
-                'flags': reader.read_ubyte(),
-                'picture': reader.read_ubyte(),
-                'type': reader.read_ubyte(),  # See types below
-
-                # Where the item lies at position
-                # In Maze:
-                #      0..3-> Bottom
-                #      4..7-> Wall (N,E,S,W)
-                # For EotB I: 0..3-> Floor NW,NE,SW,SE
-                #                8-> Compartment
-                # If in inventory:
-                #      0..26-> Position in Inventory
-                'sub_position': reader.read_ubyte(),
-
-                # Position in maze x + y * 32 | 0 => Consumed
-                'coordinate': reader.read_ushort(),
-                'next': reader.read_ushort(),
-                'previous': reader.read_ushort(),
-
-                # Level, where the item lies, 0 <= no level
-                'level': reader.read_ubyte(),
-
-                # The value of item, -1 if consumed
-                'value': reader.read_byte(),
-            }
-            pos = divmod(item['coordinate'], 32)
-            item['coordinate'] = {'x': pos[1], 'y': pos[0]}
-            items.append(item)
-
-        count = reader.read_ushort()
-        for i in range(count):
-            name = reader.read_string(35)
-            assets['item_names'].append(name)
-
-        for item in items:
-            item['unidentified_name'] = assets['item_names'][item['unidentified_name']]
-            item['identified_name'] = assets['item_names'][item['identified_name']]
-
-    return items
 
 
 def decode_inf():
@@ -1271,80 +892,6 @@ def decode_inf():
     return infs
 
 
-def decode_vmp():
-    files = ['CRIMSON.VMP', 'DUNG.VMP', 'FOREST.VMP', 'MEZZ.VMP', 'SILVER.VMP']
-    vmp = {}
-
-    for file in files:
-        with BinaryReader('data/{file}'.format(file=file)) as reader:
-            count = reader.read_ushort()
-            codes = reader.read_ushort(count)
-
-        vmp[file] = {
-            'count': count,
-            'codes': codes,
-        }
-
-    return vmp
-
-
-def decode_vcn():
-    files = ['CRIMSON.VCN', 'DUNG.VCN', 'FOREST.VCN', 'MEZZ.VCN', 'SILVER.VCN']
-    vcn = {}
-
-    for file in files:
-        vcn[file] = {}
-
-        with BinaryReader('data/{file}'.format(file=file)) as reader:
-            data = decode_format80(reader)
-
-            with open("data/{file}.uncps".format(file=file), "wb") as handle:
-                s = struct.pack('{count}B'.format(count=len(data)), *data)
-                handle.write(s)
-
-            # continue
-        with BinaryReader('data/{file}.uncps'.format(file=file)) as reader:
-
-            vcn[file]['count'] = reader.read_ushort()
-            vcn[file]['palette_backdrop'] = reader.read_ubyte(16)
-            vcn[file]['palette_wall'] = reader.read_ubyte(16)
-            shapes = []
-            for i in range(vcn[file]['count']):
-                raw = reader.read_byte(32)
-                shapes.append(raw)
-            vcn[file]['shapes'] = shapes
-
-    return vcn
-
-
-def decode_dcr():
-    files = ['BEHOLDER.DCR', 'CLERIC1.DCR', 'CLERIC2.DCR', 'CLERIC3.DCR', 'DRAGON.DCR', 'GUARD1.DCR', 'GUARD2.DCR',
-             'MAGE.DCR', 'MANTIS.DCR']
-    dcr = {}
-
-    for file in files:
-        dcr[file] = []
-        with BinaryReader('data/{file}'.format(file=file)) as reader:
-            count = reader.read_ushort()
-            for i in range(count):
-                sides = []
-                for j in range(6):
-                    side = {
-                        "cps_x": reader.read_ubyte() * 8,
-                        "cps_y": reader.read_ubyte(),
-                        "width": reader.read_ubyte() * 8,
-                        "height": reader.read_ubyte(),
-                        "screen_x": reader.read_ubyte(),
-                        "screen_y": reader.read_ubyte()
-                    }
-
-                    sides.append(side)
-                dcr[file].append(sides)
-
-            i = 1
-    return dcr
-
-
 def dump(name, data):
     path = './build'
     if not os.path.exists(path):
@@ -1352,97 +899,6 @@ def dump(name, data):
 
     with open('{path}/{name}'.format(path=path, name=name), 'w') as handle:
         json.dump(data, handle, indent=True, sort_keys=True)
-
-
-def generate_decorations():
-    path = "build/"
-    for name in assets['decorations']:
-        decoration = assets['decorations'][name]
-        img = Image.new('RGB', (320, 200))
-
-        d = ImageDraw.Draw(img)
-        d.rectangle([0, 0, 640, 480], 'white')
-        for rect in decoration['rectangles']:
-            x = rect[0]
-            y = rect[1]
-            right = x + rect[2]
-            bottom = y + rect[3]
-            d.rectangle([x, y, right, bottom], 'blue', 'red')
-
-        img.save('{path}{name}.png'.format(path=path, name=name))
-
-
-def gen_crimson():
-    deco = assets['decorations']['CRIMSON.DEC']
-    cps = Image.open('data/CRIMSON.PNG')
-
-    img = Image.new('RGB', (320, 200))
-
-    d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, 640, 480], 'white')
-
-    for rect in deco['rectangles']:
-        x = rect[0]
-        y = rect[1]
-        right = x + rect[2]
-        bottom = y + rect[3]
-
-        region = cps.crop([x, y, right, bottom])
-        img.paste(region, box=[x, y])
-
-        img.save('build/CRIMSON_decoded.PNG')
-
-        i = 1
-
-
-def draw_dec():
-    files = ['AZURE', 'BROWN', 'CRIMSON', 'FOREST', 'MEZZ', 'SILVER']
-
-    for file in files:
-        dec = assets['dec'][file + '.DEC']
-        i = 1
-
-
-def draw_vmp():
-    files = ['CRIMSON', 'DUNG', 'FOREST', 'MEZZ', 'SILVER']
-
-    for file in files:
-        vcn = assets['vcn'][file + '.VCN']
-        vmp = assets['vmp'][file + '.VMP']
-        i = 1
-
-
-def draw_dcr():
-    files = ['BEHOLDER', 'CLERIC1', 'CLERIC2', 'CLERIC3', 'DRAGON', 'GUARD1', 'GUARD2', 'MAGE', 'MANTIS']
-    path = './data/'
-
-    for file in files:
-        dcr = assets['dcr'][file]
-
-        for id in range(len(dcr)):
-            data = dcr[id]
-            img = Image.open("{path}{file}.PNG".format(path=path, file=file), 'r')
-            # img.convert('RGBA')
-
-            for face in range(6):
-                d = data[face]
-
-                x = d['cps_x']
-                y = d['cps_y']
-                right = x + d['width']
-                lower = y + d['height']
-
-                bg = Image.new('RGBA', (320, 200), (255, 0, 0, 0))
-                bg.paste(img, (0, 0))
-
-                crop = bg.crop((x, y, right, lower))
-                # crop.convert('RGBA')
-
-                x = d['screen_x']
-                y = d['screen_y']
-                bg.paste(crop, (x, y), )
-
-                bg.save("{path}{file}_{id}_{face}.PNG".format(path=path, file=file, id=id, face=face), format='png')
 
 
 assets = {
@@ -1462,48 +918,9 @@ assets = {
 if __name__ == '__main__':
     assets_manager.export_texts()
 
-    # VMP: information about how to put together the blocks defined in the corresponding vcn files, into proper walls
-    assets['vmp'] = decode_vmp()
-
-    # VCN: graphics for the walls including the background
-    assets['vcn'] = decode_vcn()
-
-    # DCR: monster graphics
-    assets['dcr'] = decode_dcr()
-
-    dump('text.json', assets_manager.texts)
-
-    # ITEMTYPE.DAT
-    assets['item_types'] = decode_itemtypes()
-    dump('item_types.json', assets['item_types'])
-
-    # ITEM.DAT
-    assets['items'] = decode_items()
-    dump('items.json', assets['items'])
-
-    # Rebuild items in levels
-    level_items = [{
-        'flags': str(ItemFlags(item['flags'])),
-        'type': assets['item_types'][item['type']],
-        'picture': item['picture'],
-        'value': item['value'],
-        'coordinate': {
-            'level': item['level'],
-            'x': item['coordinate']['x'],
-            'y': item['coordinate']['y'],
-        }
-    } for item in assets['items']]
-    dump('level_items.json', level_items)
+    assets_manager.export_item_types()
+    assets_manager.export_items()
 
     # INF
     assets['inf'] = decode_inf()
-    dump('inf.json', [inf.decode(assets) for inf in assets['inf'].values()])
-
-    # Savegame
-    # savegame = Savegame('data/EOBDATA2.SAV')
-
-    # draw_dcr()
-    # draw_vmp()
-    # draw_dec()
-
-    exit()
+    dump('inf.json', [inf.export(assets) for inf in assets['inf'].values()])
