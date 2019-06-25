@@ -1,12 +1,24 @@
 from PIL import Image
 
 from binary_reader import BinaryReader
-from compression import decode_format80
+from compression import decode_format80, decode_format80_image
 
 
 def load_cps(cps_filename, palette=None):
     with BinaryReader(cps_filename) as reader:
-        cps_data = decode_format80(reader)
+        cps_data = decode_format80_image(reader)
+
+        palette_size = cps_data[0]
+        cps_data = cps_data[1:]
+        if palette_size > 0:
+            if palette is not None:
+                print('overriding palette for file %s' % cps_filename)
+
+            palette = []
+            for i in range(palette_size):
+                palette.append(cps_data[i] << 2)
+
+            cps_data = cps_data[palette_size:]
 
         if palette is not None:
             img = Image.new('P', (320, 200))
@@ -31,10 +43,6 @@ def load_palette(pal_filename):
     """
 
     pal_data = []
-    # with BinaryReader(pal_filename) as reader:
-    #     col6 = reader.read_ubyte()
-    #     col = (col6 * 255) / 63
-    #     pal_data.append(col)
 
     with open(pal_filename, 'rb') as fpal:
         pal_data_6 = fpal.read()
