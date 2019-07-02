@@ -48,6 +48,6 @@ def load_palette(pal_filename):
         pal_data_6 = fpal.read()
         for col6 in pal_data_6:
             # col = (col6 * 255) / 63
-            pal_data.append(col6 << 2)
+            pal_data.append((col6 & 0x3f) << 2)
 
     return pal_data
