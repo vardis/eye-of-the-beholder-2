@@ -190,13 +190,26 @@ class DcrAsset:
 class VmpAsset:
     class TilesInfo:
         def __init__(self):
+            self.wall_type = None
+            self.tiles = []
             self.gfx = None
-            self.flipped_tiles = []
 
         def export(self):
             return {
-                'gfx': self.gfx,
-                'flipped': self.flipped_tiles
+                'wallType': self.wall_type,
+                'tiles': [t.export() for t in self.tiles],
+                'gfx': self.gfx
+            }
+
+    class Tile:
+        def __init__(self, vcn_block, flipped):
+            self.flipped = flipped
+            self.vcn_block = vcn_block
+
+        def export(self):
+            return {
+                'vcn_block': self.vcn_block,
+                'flipped': self.flipped
             }
 
     def __init__(self):
@@ -205,7 +218,7 @@ class VmpAsset:
         self.wall_tiles = None
         self.bg_palette = []
         self.wall_palette = []
-        self.blocks = None
+        self.vcn_blocks = None
         self.exported = False
         self.bg_tiles_info = None
         self.wall_tiles_infos = []
@@ -254,7 +267,7 @@ class AssetsManager:
         if not rel_cps_filename.endswith(CPS_EXTENSION): rel_cps_filename += CPS_EXTENSION
 
         img = gfx.load_cps(rel_cps_filename, self.palette)
-        image_asset = self._export_image(img, cps_filename)
+        image_asset = self._export_image(img, cps_filename + '.png')
         image_asset.original_asset = rel_cps_filename
 
         return image_asset
@@ -492,15 +505,15 @@ class AssetsManager:
         if not os.path.exists(vmp_filename):
             raise Exception('Cannot find VMP file %s' % vmp_filename)
 
-        vcn_filename = os.path.join(self.data_dir, vmp_name.upper() + '.VCN')
-        if not os.path.exists(vcn_filename):
-            raise Exception('Cannot find the corresponding VCN file %s' % vcn_filename)
-
         with BinaryReader(vmp_filename) as reader:
             shorts_per_tileset = 431
             file_size = 2 * reader.read_ushort()
             num_wall_types = int(file_size / (2 * shorts_per_tileset)) - 1
-            bg_tiles = reader.read_ushort(22 * 15)
+
+            # one short per block
+            bg_tiles = reader.read_ushort(BLOCKS_COLUMNS * BLOCKS_ROWS)
+
+            # padding
             _ = reader.read_ushort(101)
 
             tiles = []
@@ -508,7 +521,27 @@ class AssetsManager:
                 wall_tiles = reader.read_ushort(shorts_per_tileset)
                 tiles.append(wall_tiles)
 
-        with BinaryReader(vcn_filename) as vcn_reader:
+        vcn = self.read_vcn(vmp_name.upper() + '.VCN')
+
+        vmp_asset = VmpAsset()
+        vmp_asset.name = vmp_name
+        vmp_asset.bg_palette = vcn['bg_palette']
+        vmp_asset.wall_palette = vcn['walls_palette']
+        vmp_asset.bg_tiles = bg_tiles
+        vmp_asset.wall_tiles = tiles
+        vmp_asset.vcn_blocks = vcn['blocks']
+
+        self.vmps[vmp_name] = vmp_asset
+
+        return vmp_asset
+
+    def read_vcn(self, vcn_filename):
+
+        rel_vcn_filename = os.path.join(self.data_dir, vcn_filename)
+        if not os.path.exists(rel_vcn_filename):
+            raise Exception('Cannot find the VCN file %s' % rel_vcn_filename)
+
+        with BinaryReader(rel_vcn_filename) as vcn_reader:
             vcn_data = decode_format80(vcn_reader)
 
         vcn_reader = BinaryArrayData(vcn_data)
@@ -530,30 +563,14 @@ class AssetsManager:
 
         blocks = []
         for _ in range(num_blocks):
-            raw = vcn_reader.read_byte(32)
+            raw = vcn_reader.read_ubyte(32)
             blocks.append(raw)
 
-        vmp_asset = VmpAsset()
-        vmp_asset.name = vmp_name
-        vmp_asset.bg_palette = bg_palette
-        vmp_asset.wall_palette = walls_palette
-        vmp_asset.bg_tiles = bg_tiles
-        vmp_asset.wall_tiles = tiles
-        vmp_asset.blocks = blocks
-
-        self.vmps[vmp_name] = vmp_asset
-
-        return vmp_asset
-
-    def _export_image(self, pil_img, filename):
-        exported_filename = os.path.join(self.build_dir, "%s.png" % filename.lower())
-        pil_img.convert('RGB').save(exported_filename)
-
-        image_asset = ImageAsset(self.id_gen, exported_filename, full_path=os.path.abspath(exported_filename))
-
-        self.images[filename] = image_asset
-        self.id_gen += 1
-        return image_asset
+        return {
+            'bg_palette': bg_palette,
+            'walls_palette': walls_palette,
+            'blocks': blocks
+        }
 
     def export_vmp(self, vmp_name):
         if vmp_name not in self.vmps:
@@ -568,24 +585,25 @@ class AssetsManager:
         num_wall_types = len(vmp.wall_tiles)
 
         for i in range(num_wall_types):
-            flipped_tiles = []
-            img = self._create_tileset_image(vmp.wall_palette, vmp.wall_tiles[i], vmp.blocks, flipped_tiles)
-            gfx_filename = '%s_tiles_%d' % (vmp_name, i)
+            tiles = self._export_vmp_blocks(vmp.wall_tiles[i])
+            img = self._create_tileset_image(vmp.wall_palette, tiles, vmp.vcn_blocks)
+            gfx_filename = '%s_tiles_%d.png' % (vmp_name, i)
             self._export_image(img, gfx_filename)
 
             tiles_info = VmpAsset.TilesInfo()
-            tiles_info.flipped_tiles = flipped_tiles
+            tiles_info.tiles = tiles
             tiles_info.gfx = gfx_filename
+            tiles_info.wall_type = i
 
             vmp.wall_tiles_infos.append(tiles_info)
 
-        flipped_tiles = []
-        img = self._create_tileset_image(vmp.bg_palette, vmp.bg_tiles, vmp.blocks, flipped_tiles)
-        bg_image_filename = '%s_tiles_bg' % vmp_name
+        tiles = self._export_vmp_blocks(vmp.bg_tiles)
+        img = self._create_tileset_image(vmp.bg_palette, tiles, vmp.vcn_blocks)
+        bg_image_filename = '%s_tiles_bg.png' % vmp_name
         self._export_image(img, bg_image_filename)
 
         tiles_info = VmpAsset.TilesInfo()
-        tiles_info.flipped_tiles = flipped_tiles
+        tiles_info.tiles = tiles
         tiles_info.gfx = bg_image_filename
         vmp.bg_tiles_info = tiles_info
 
@@ -595,7 +613,28 @@ class AssetsManager:
 
         return vmp
 
-    def _create_tileset_image(self, palette, tileset, block_data, flipped_tiles):
+    def _export_vmp_blocks(self, vmp_blocks):
+        exported_blocks = []
+        for block_y in range(BLOCKS_ROWS):
+            for block_x in range(BLOCKS_COLUMNS):
+                tile_index = block_y * BLOCKS_COLUMNS + block_x
+                tile = vmp_blocks[tile_index]
+                flip = (tile & 0x04000) == 0x04000
+                block_index = tile & 0x3fff
+
+                exported_blocks.append(VmpAsset.Tile(block_index, flip))
+
+        return exported_blocks
+
+    def _create_tileset_image(self, palette, tileset, block_data):
+        """
+        In the resulting image the k-th 8x8 image block corresponds to the k-th
+        block in the VMP file.
+
+        So if I want to render a wall of type <wall_type> at the view position (x, y), then I will load the gfx
+        of wallTiles[<wall_type>] and copy the 8x8 sub-block from that image that is
+        located at 8*x,8*y in the image.
+        """
         img = Image.new('P', (BLOCKS_COLUMNS * BLOCKS_SIZE, BLOCKS_ROWS * BLOCKS_SIZE))
         img.putpalette(palette)
 
@@ -608,26 +647,26 @@ class AssetsManager:
 
                 tile_index = block_y * BLOCKS_COLUMNS + block_x
                 tile = tileset[tile_index]
-                flip = (tile & 0x04000) == 0x04000
-
-                if flip:
-                    print('flip block %d,%d' % (block_x, block_y))
-                    flipped_tiles.append(tile_index)
-
-                block_index = tile & 0x3fff
-
-                block = block_data[block_index]
+                block = block_data[tile.vcn_block]
 
                 for y in range(8):
                     for x in range(4):
                         word = block[x + y * 4]
-                        col1 = word >> 4
+                        col1 = (word & 0xf0) >> 4
                         col2 = word & 0x0f
                         img_coords = block_y * PIX_PER_BLOCK_ROW + block_x * BLOCKS_SIZE + y * PIX_PER_ROW + 2 * x
                         img_data[img_coords] = col1
                         img_data[img_coords + 1] = col2
-                        # img_data.append(col1)
-                        # img_data.append(col2)
 
         img.putdata(img_data)
         return img
+
+    def _export_image(self, pil_img, filename):
+        exported_filename = os.path.join(self.build_dir, filename.lower())
+        pil_img.convert('RGB').save(exported_filename)
+
+        image_asset = ImageAsset(self.id_gen, exported_filename, full_path=os.path.abspath(exported_filename))
+
+        self.images[filename] = image_asset
+        self.id_gen += 1
+        return image_asset
