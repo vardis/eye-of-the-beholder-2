@@ -94,7 +94,6 @@ class Alignment(Enum):
     NeutralEvil = 7,
     ChaoticEvil = 8,
 
-
 ItemAction = {
     '0': 'Nothing',
     '1': '1',
@@ -230,7 +229,6 @@ class WallFlags(IntFlag):
     DOOR_KNOW    = 0x40  # The door has a knob
     ONLY_DEC     = 0x80  # No wall, only decoration, items visible
     # @formatter:on
-
 
 class WallType(IntFlag):
     # @formatter:off

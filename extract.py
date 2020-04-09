@@ -421,7 +421,7 @@ class Trigger:
         )
 
 
-class Header:
+class Level:
     """
 
     """
@@ -447,7 +447,6 @@ class Header:
 
         assets_manager.export_maze(self.maze_name)
 
-        assets_manager.load_vmp(self.vmpVcnName)
         assets_manager.export_vmp(self.vmpVcnName)
 
         return {
@@ -585,7 +584,7 @@ class Inf:
         self.name = name
         self.timers = []
         self.monsters = []
-        self.headers = [Header() for i in range(2)]
+        self.headers = [Level() for i in range(2)]
         self.hunks = [0, 0]
         self.triggers = []
         self.messages = []
@@ -665,7 +664,7 @@ class Inf:
         inf_filename = filename + '.INF'
         uncps_filename = filename + '.uncps'
 
-        with BinaryReader(filename + '.INF') as reader:
+        with BinaryReader(inf_filename) as reader:
 
             data = decode_format80(reader)
 
@@ -924,3 +923,22 @@ if __name__ == '__main__':
     # INF
     assets['inf'] = decode_inf()
     dump('inf.json', [inf.export(assets) for inf in assets['inf'].values()])
+
+    cps_files = [
+        'CHOICE.CPS',
+        'INVENT.CPS',
+        'ITEMICN.CPS',
+        'ITEML1.CPS',
+        'ITEMS1.CPS',
+        'MAP.CPS',
+        'MENU.CPS',
+        'WESTWOOD.CPS',
+        'INTRO.CPS',
+        'AZURE1.CPS',
+        'AZURE2.CPS',
+        'BEHOLDER.CPS',
+
+    ]
+
+    for f in cps_files:
+        assets_manager.export_cps_image(f)
