@@ -344,8 +344,6 @@ class VmpAsset:
         self.bg_tiles = None
         self.wall_tiles = None
         self.exported = False
-        # self.bg_tiles_info = None
-        # self.wall_tiles_infos = []
         self.vcn = None
 
     @staticmethod
@@ -359,12 +357,7 @@ class VmpAsset:
             bg_tiles = reader.read_ushort(BLOCKS_COLUMNS * BLOCKS_ROWS)
 
             # padding
-            foo = reader.read_ushort(101)
-
-            wall_tiles = []
-            for _ in range(num_wall_types):
-                wall_type_tiles = reader.read_ushort(shorts_per_tileset)
-                wall_tiles.append(wall_type_tiles)
+            wall_tiles = reader.read_ushort(101 + num_wall_types*shorts_per_tileset)
 
         vcn = VcnAsset.load(basename, vcn_filename, level_palette)
         vmp_asset = VmpAsset()
@@ -381,18 +374,7 @@ class VmpAsset:
 
         self.vcn.export(output_dir)
 
-        wall_tiles_infos = []
-
-        num_wall_types = len(self.wall_tiles)
-        for i in range(num_wall_types):
-            tiles = self._export_vmp_blocks(self.wall_tiles[i])
-
-            tiles_info = VmpAsset.TilesInfo()
-            tiles_info.tiles = tiles
-            tiles_info.wall_type = i
-
-            wall_tiles_infos.append(tiles_info)
-
+        wall_tiles_infos = self._export_vmp_blocks(self.wall_tiles)
         bg_tiles = self._export_vmp_blocks(self.bg_tiles)
 
         data = {
@@ -433,11 +415,7 @@ class AssetsManager:
 
         self.id_gen = 0
         self.data_dir = data_dir
-        # if not self.data_dir.endswith("/"): self.data_dir += "/"
-
         self.build_dir = build_dir
-        # if not self.build_dir.endswith("/"): self.build_dir += "/"
-
         self.palette_filename = None
         self.palette = None
 
